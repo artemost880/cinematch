@@ -20,9 +20,11 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
 
   // Локальные фильтры для поиска в TMDB
   RangeValues _currentRating = const RangeValues(6.0, 10.0);
-  RangeValues _currentYear = RangeValues(1990.0, 2026.0);
+  RangeValues _currentYear = const RangeValues(1990.0, 2026.0);
   Set<String> _currentGenresText = {};
-  List<int> _currentGenresIds = [];
+  
+  // ИСПРАВЛЕНО: Вместо списка ID теперь используем строку для поддержки негативных фильтров
+  String _currentGenresQuery = ''; 
   
   // Дополнительные параметры фильтрации
   RangeValues _currentRuntime = const RangeValues(40.0, 240.0);
@@ -50,8 +52,8 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
         _currentRating = result['rating'];
         _currentYear = result['year'];
         _currentGenresText = result['genresText'];
-        _currentGenresIds = result['genresIds'];
-        _currentRuntime = result['runtime'];
+        _currentGenresQuery = result['genresQuery'] ?? ''; // ИСПРАВЛЕНО: Сохраняем строку параметров
+        _currentRuntime = result['runtime'] as RangeValues? ?? const RangeValues(40.0, 240.0);
         _isGenreAndLogic = result['isGenreAndLogic'];
         _selectedActors = result['selectedActors'];
         _isCastAndLogic = result['isCastAndLogic'];
@@ -69,14 +71,14 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
         maxRating: _currentRating.end,
         minYear: _currentYear.start.toInt(), 
         maxYear: _currentYear.end.toInt(),
-        genreIds: _currentGenresIds,
+        genreIds: _currentGenresQuery, // ИСПРАВЛЕНО: Передаем строку напрямую
         deckSize: deckSize,
         isGenreAndLogic: _isGenreAndLogic,
         castIds: _selectedActors.map((a) => a['id'] as int).toList(),
         isCastAndLogic: _isCastAndLogic,
         minRuntime: _currentRuntime.start.toInt(),
         maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
-        contentType: _currentContentType, // Передаем тип контента в сервис комнат
+        contentType: _currentContentType, 
       );
     } catch (e) {
       if (mounted) {

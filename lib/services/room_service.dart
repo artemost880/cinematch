@@ -70,21 +70,22 @@ class RoomService {
   }
 
   // 5. ЗАПУСК ИГРЫ (С поддержкой переключения Фильмы / Сериалы)
-  Future<void> startRoom(
-    String code, {
-    required double minRating,
-    required double maxRating,
-    required int minYear,
-    required int maxYear,
-    required List<int> genreIds,
-    required int deckSize,
+Future<void> startRoom(
+    String roomCode, {
+    double minRating = 0.0,
+    double maxRating = 10.0,
+    int minYear = 1950,
+    int maxYear = 2026,
+    dynamic genreIds = '', // ИСПРАВЛЕНО: Изменили на dynamic (или String)
+    int deckSize = 20,
     bool isGenreAndLogic = false,
     List<int> castIds = const [],
     bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
-    String contentType = 'movie', // НАШ НОВЫЙ ПАРАМЕТР
+    String contentType = 'movie',
   }) async {
+
     
     // 1. Формируем колоду под выбранный тип контента
     final deck = await _populateDeck(
@@ -103,7 +104,7 @@ class RoomService {
     );
 
     // 2. Меняем статус на active и записываем тип контента сессии в БД
-    await _db.collection('rooms').doc(code).update({
+    await _db.collection('rooms').doc(roomCode).update({
       'status': 'active',
       'deck': deck,
       'content_type': contentType, 
