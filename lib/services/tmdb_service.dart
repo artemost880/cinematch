@@ -3,54 +3,84 @@ import 'dart:math';
 import 'package:url_launcher/url_launcher.dart';
 
 class TMDBService {
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'https://api.themoviedb.org/3',
-    queryParameters: {
-      'api_key': '518345addd8c574e41183682be0a1072',
-      'language': 'ru-RU',
-    },
-  ));
+  final Dio _dio = Dio(BaseOptions(baseUrl: 'https://api.themoviedb.org/3'));
+  final String apiKey = 'YOUR_TMDB_API_KEY'; // Подставьте ваш API-ключ TMDB
 
-  // 1. Поиск фильмов по текстовому названию
-  Future<List<dynamic>> searchMovies(String query) async {
-    if (query.isEmpty) return [];
+  // Вспомогательный метод для склейки полей фильмов и сериалов (Нормализация данных)
+  Map<String, dynamic> _normalizeItem(Map<String, dynamic> item, String contentType) {
+    if (contentType == 'tv') {
+      item['title'] = item['name'] ?? item['original_name'] ?? 'Без названия';
+      item['release_date'] = item['first_air_date'] ?? '---';
+      item['is_tv'] = true;
+    } else {
+      item['is_tv'] = false;
+    }
+    return item;
+  }
+
+  // Получение полного URL для изображений (постеры, кадры, аватарки)
+  String getImageUrl(String? path, {String size = 'w500'}) {
+    if (path == null || path.isEmpty) return '';
+    return 'https://image.tmdb.org/t/p/$size$path';
+  }
+
+  // Получение детальной информации о фильме или сериале
+  Future<Map<String, dynamic>?> getMovieDetails(int id, {String contentType = 'movie'}) async {
     try {
+      final endpoint = contentType == 'movie' ? '/movie/$id' : '/tv/$id';
       final response = await _dio.get(
-        '/search/movie',
+        endpoint,
         queryParameters: {
-          'query': query,
-          'include_adult': false,
+          'api_key': apiKey,
           'language': 'ru-RU',
+          'append_to_response': 'videos,images,credits,watch/providers',
         },
       );
-      return response.data['results'] as List<dynamic>;
+      return _normalizeItem(response.data, contentType);
     } catch (e) {
-      print('Ошибка при поиске фильма: $e');
+      return null;
+    }
+  }
+
+  // Текстовый поиск фильмов и сериалов (убирает ошибки в Делегате и Экране Поиска)
+  Future<List<dynamic>> searchMovies(String query, {String contentType = 'movie'}) async {
+    try {
+      final endpoint = contentType == 'movie' ? '/search/movie' : '/search/tv';
+      final response = await _dio.get(
+        endpoint,
+        queryParameters: {
+          'api_key': apiKey,
+          'language': 'ru-RU',
+          'query': query,
+          'page': 1,
+        },
+      );
+      final List<dynamic> results = response.data['results'] ?? [];
+      return results.map((item) => _normalizeItem(item, contentType)).toList();
+    } catch (e) {
       return [];
     }
   }
 
-  // 2. НОВЫЙ МЕТОД: Поиск актеров по имени (для умного автодополнения)
+  // Поиск актеров по имени (используется для автокомплита в шторке фильтров)
   Future<List<dynamic>> searchPerson(String query) async {
-    if (query.isEmpty) return [];
     try {
       final response = await _dio.get(
         '/search/person',
         queryParameters: {
-          'query': query,
-          'include_adult': false,
+          'api_key': apiKey,
           'language': 'ru-RU',
+          'query': query,
+          'page': 1,
         },
       );
-      // Возвращаем список людей (нам понадобятся их 'id' и 'name')
-      return response.data['results'] as List<dynamic>;
+      return response.data['results'] ?? [];
     } catch (e) {
-      print('Ошибка при поиске актера: $e');
       return [];
     }
   }
 
-  // 3. Получить список фильмов для комнат (теперь с расширенными фильтрами)
+  // Получение подборок контента по жанру и расширенным фильтрам (с пагинацией)
   Future<Map<String, dynamic>> getMoviesByGenre(
     int genreId, {
     int page = 1,
@@ -62,176 +92,145 @@ class TMDBService {
     bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
+    String contentType = 'movie', // 'movie' или 'tv'
   }) async {
     try {
-      final Map<String, dynamic> queryParams = {
-        'sort_by': 'popularity.desc',
-        'with_genres': genreId.toString(),
+      final endpoint = contentType == 'movie' ? '/discover/movie' : '/discover/tv';
+      final dateMinKey = contentType == 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+      final dateMaxKey = contentType == 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
+
+      final Map<String, dynamic> params = {
+        'api_key': apiKey,
+        'language': 'ru-RU',
         'page': page,
-        'vote_count.gte': 150,
-        'region': 'RU',
         'vote_average.gte': minRating,
         'vote_average.lte': maxRating,
-        'primary_release_date.gte': '$minYear-01-01',
-        'primary_release_date.lte': '$maxYear-12-31',
+        '$dateMinKey': '$minYear-01-01',
+        '$dateMaxKey': '$maxYear-12-31',
       };
 
-      // Фильтр по актерам (И / ИЛИ)
-      if (castIds.isNotEmpty) {
-        queryParams['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
+      // Передаем ID жанра
+      params['with_genres'] = genreId.toString();
+
+      // Хронометраж (поддерживается базовым API TMDB только для фильмов)
+      if (contentType == 'movie') {
+        if (minRuntime != null) params['with_runtime.gte'] = minRuntime;
+        if (maxRuntime != null) params['with_runtime.lte'] = maxRuntime;
       }
 
-      // Фильтр по длительности
-      if (minRuntime != null) queryParams['with_runtime.gte'] = minRuntime;
-      if (maxRuntime != null) queryParams['with_runtime.lte'] = maxRuntime;
+      // Фильтр по актерскому составу
+      if (castIds.isNotEmpty) {
+        params['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
+      }
 
-      final response = await _dio.get('/discover/movie', queryParameters: queryParams);
+      final response = await _dio.get(endpoint, queryParameters: params);
       
+      final List<dynamic> results = response.data['results'] ?? [];
+      final normalizedResults = results.map((item) => _normalizeItem(item, contentType)).toList();
+
       return {
-        'results': response.data['results'] as List<dynamic>,
-        'total_pages': response.data['total_pages'] as int,
+        'results': normalizedResults,
+        'total_pages': response.data['total_pages'] ?? 1,
       };
     } catch (e) {
-      print('Ошибка получения списка фильмов: $e');
       return {'results': [], 'total_pages': 1};
     }
   }
 
-  // 4. Получить случайный фильм (Ядро механики RandomMovieScreen)
+  // Рандомайзер (вытаскивает случайный фильм/сериал по заданным фильтрам)
   Future<Map<String, dynamic>?> getRandomMovie({
     double minRating = 0.0,
     double maxRating = 10.0,
     int minYear = 1950,
     int maxYear = 2026,
     List<int> genreIds = const [],
-    bool isGenreAndLogic = false, // Новая логика И/ИЛИ для жанров
+    bool isGenreAndLogic = false,
     List<int> castIds = const [],
-    bool isCastAndLogic = false,  // Новая логика И/ИЛИ для актеров
+    bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
+    String contentType = 'movie', // 'movie' или 'tv'
   }) async {
     try {
-      final Map<String, dynamic> queryParams = {
-        'sort_by': 'popularity.desc',
-        'include_adult': false,
+      final endpoint = contentType == 'movie' ? '/discover/movie' : '/discover/tv';
+      final dateMinKey = contentType == 'movie' ? 'primary_release_date.gte' : 'first_air_date.gte';
+      final dateMaxKey = contentType == 'movie' ? 'primary_release_date.lte' : 'first_air_date.lte';
+
+      final Map<String, dynamic> params = {
+        'api_key': apiKey,
+        'language': 'ru-RU',
         'vote_average.gte': minRating,
         'vote_average.lte': maxRating,
-        'primary_release_date.gte': '$minYear-01-01',
-        'primary_release_date.lte': '$maxYear-12-31',
-        'vote_count.gte': 150, 
-        'with_original_language': 'en|ru', 
-        'region': 'RU', 
+        '$dateMinKey': '$minYear-01-01',
+        '$dateMaxKey': '$maxYear-12-31',
       };
 
-      // Применяем логику И/ИЛИ для жанров (запятая = И, черта = ИЛИ)
       if (genreIds.isNotEmpty) {
-        queryParams['with_genres'] = genreIds.join(isGenreAndLogic ? ',' : '|');
+        params['with_genres'] = genreIds.join(isGenreAndLogic ? ',' : '|');
       }
-
-      // Применяем логику И/ИЛИ для актеров
       if (castIds.isNotEmpty) {
-        queryParams['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
+        params['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
+      }
+      if (contentType == 'movie') {
+        if (minRuntime != null) params['with_runtime.gte'] = minRuntime;
+        if (maxRuntime != null) params['with_runtime.lte'] = maxRuntime;
       }
 
-      // Фильтр по хронометражу (если задан)
-      if (minRuntime != null) queryParams['with_runtime.gte'] = minRuntime;
-      if (maxRuntime != null) queryParams['with_runtime.lte'] = maxRuntime;
-
-      // Узнаем, сколько всего страниц подходит под фильтры
-      final firstResponse = await _dio.get('/discover/movie', queryParameters: queryParams);
-      final int totalPages = firstResponse.data['total_pages'] ?? 1;
-
-      if (totalPages == 0 || firstResponse.data['results'].isEmpty) return null;
-
-      // TMDB ограничивает пагинацию 500 страницами
-      final int maxPage = totalPages > 500 ? 500 : totalPages;
-      final int randomPage = Random().nextInt(maxPage) + 1;
+      // Пингуем API, чтобы узнать общее число страниц по заданным фильтрам
+      final firstResp = await _dio.get(endpoint, queryParameters: params);
+      final int totalPages = firstResp.data['total_pages'] ?? 1;
       
-      queryParams['page'] = randomPage;
-      final finalResponse = await _dio.get('/discover/movie', queryParameters: queryParams);
+      // TMDB имеет жесткий лимит в 500 страниц на discover-запросы
+      final int maxPage = totalPages > 500 ? 500 : totalPages;
+      final int targetPage = Random().nextInt(maxPage) + 1;
 
-      final results = finalResponse.data['results'] as List<dynamic>;
-      if (results.isNotEmpty) {
-         results.shuffle(); 
-         
-         final movieData = results.first;
-         if (movieData['title'] == null || movieData['title'].toString().isEmpty) {
-           return getRandomMovie(
-             minRating: minRating, maxRating: maxRating, 
-             minYear: minYear, maxYear: maxYear, genreIds: genreIds,
-             isGenreAndLogic: isGenreAndLogic, castIds: castIds, 
-             isCastAndLogic: isCastAndLogic, minRuntime: minRuntime, maxRuntime: maxRuntime
-           ); 
-         }
+      // Делаем финальный запрос на случайную страницу
+      params['page'] = targetPage;
+      final finalResp = await _dio.get(endpoint, queryParameters: params);
+      final List<dynamic> results = finalResp.data['results'] ?? [];
 
-         return await getMovieDetails(movieData['id']);
-      }
-      return null;
+      if (results.isEmpty) return null;
+
+      // Берем случайный элемент из полученной страницы
+      final randomItem = results[Random().nextInt(results.length)];
+      
+      // Запрашиваем полные детали (актеры, кадры, трейлер) для карточки
+      return await getMovieDetails(randomItem['id'], contentType: contentType);
     } catch (e) {
-      print('Ошибка при запросе случайного фильма: $e');
       return null;
     }
   }
 
-  // 5. Получить ПОЛНЫЕ детали фильма (Агрегатор данных)
-  Future<Map<String, dynamic>?> getMovieDetails(int movieId) async {
+  // Получение рейтинга Кинопоиска по IMDb ID
+  Future<Map<String, dynamic>?> getKinopoiskData(String imdbId) async {
     try {
       final response = await _dio.get(
-        '/movie/$movieId',
-        queryParameters: {
-          'append_to_response': 'credits,videos,images,watch/providers',
-          'include_image_language': 'ru,null', 
-        },
+        'https://kinopoiskapiunofficial.tech/api/v2.2/films/external_id/$imdbId', 
+        options: Options(headers: {'X-API-KEY': 'YOUR_KINOPOISK_API_KEY'}) // Вставьте ваш токен Кинопоиска
       );
       return response.data;
     } catch (e) {
-      print('Ошибка получения деталей фильма: $e');
       return null;
     }
   }
 
-  // 6. Запрос к API Кинопоиска
-  Future<Map<String, dynamic>?> getKinopoiskData(String? imdbId) async {
-    if (imdbId == null || imdbId.isEmpty) return null;
-    
-    try {
-      final kpDio = Dio();
-      final response = await kpDio.get(
-        'https://kinopoiskapiunofficial.tech/api/v2.2/films',
-        queryParameters: {'imdbId': imdbId},
-        options: Options(headers: {
-          'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b', 
-          'Content-Type': 'application/json',
-        }),
-      );
-      
-      if (response.data['items'] != null && response.data['items'].isNotEmpty) {
-        return response.data['items'][0];
-      }
-      return null;
-    } catch (e) {
-      print('Ошибка Кинопоиска: $e');
-      return null;
-    }
-  }
-
-  // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
-  String getImageUrl(String? path) {
-    if (path == null) return '';
-    return 'https://image.tmdb.org/t/p/w500$path';
-  }
-
+  // Запуск трейлера на YouTube через внешнее приложение или браузер
   Future<void> launchTrailer(List<dynamic>? videos) async {
     if (videos == null || videos.isEmpty) return;
     
+    // Ищем официальный трейлер на YouTube
     final trailer = videos.firstWhere(
       (v) => v['site'] == 'YouTube' && v['type'] == 'Trailer',
-      orElse: () => null,
+      orElse: () => videos.firstWhere((v) => v['site'] == 'YouTube', orElse: () => null),
     );
 
-    if (trailer != null) {
-      final url = Uri.parse('https://www.youtube.com/watch?v=${trailer['key']}');
-      if (await canLaunchUrl(url)) {
+    if (trailer != null && trailer['key'] != null) {
+      final Uri url = Uri.parse('https://www.youtube.com/watch?v=${trailer['key']}');
+      final Uri appUrl = Uri.parse('youtube://www.youtube.com/watch?v=${trailer['key']}');
+      
+      if (await canLaunchUrl(appUrl)) {
+        await launchUrl(appUrl, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       }
     }
