@@ -5,7 +5,7 @@ import 'dart:async';
 class FiltersSheet extends StatefulWidget {
   final RangeValues initialRating;
   final RangeValues initialYear;
-  final Set<String> initialGenres;
+  final Set<String> initialGenres; // Для обратной совместимости передаем как включенные
   final List<Map<String, dynamic>>? initialActors;
   final bool initialGenreLogic;
   final bool initialCastLogic;
@@ -36,11 +36,14 @@ class _FiltersSheetState extends State<FiltersSheet> {
   late RangeValues _rating;
   late RangeValues _year;
   late RangeValues _runtime; 
-  late Set<String> _selectedGenresText;
   late bool _isGenreAndLogic;
   late List<Map<String, dynamic>> _selectedActors;
   late bool _isCastAndLogic;
   late String _contentType; 
+
+  // НОВАЯ СТРУКТУРА: Карта состояний жанров. 
+  // Ключ — название жанра, значение: 1 (включить), -1 (исключить). Если жанра нет в карте — он нейтрален.
+  final Map<String, int> _genreStates = {};
 
   final TextEditingController _actorSearchController = TextEditingController();
   List<dynamic> _actorSearchResults = [];
@@ -60,12 +63,16 @@ class _FiltersSheetState extends State<FiltersSheet> {
     super.initState();
     _rating = widget.initialRating;
     _year = widget.initialYear;
-    _selectedGenresText = Set.from(widget.initialGenres);
     _selectedActors = List.from(widget.initialActors ?? []);
     _isGenreAndLogic = widget.initialGenreLogic;
     _isCastAndLogic = widget.initialCastLogic;
     _runtime = widget.initialRuntime ?? const RangeValues(40.0, 240.0);
     _contentType = widget.initialContentType;
+
+    // Инициализируем стартовые жанры как "включенные" (состояние 1)
+    for (var genre in widget.initialGenres) {
+      _genreStates[genre] = 1;
+    }
   }
 
   @override
@@ -112,23 +119,20 @@ class _FiltersSheetState extends State<FiltersSheet> {
     });
   }
 
-  Widget _buildLogicToggle(bool isAnd, ValueChanged<bool> onChanged) {
-    return ToggleButtons(
-      isSelected: [!isAnd, isAnd],
-      onPressed: (index) => onChanged(index == 1),
-      borderRadius: BorderRadius.circular(8),
-      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
-      selectedColor: const Color(0xFF00E5FF),
-      color: Colors.white54,
-      constraints: const BoxConstraints(minHeight: 30, minWidth: 60),
-      children: const [
-        Text('ИЛИ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-        Text('И', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-      ],
-    );
+  // Ротация состояний при клике: Нейтральный (нет) -> Включен (1) -> Исключен (-1) -> Нейтральный (нет)
+  void _toggleGenreState(String genreName) {
+    setState(() {
+      final currentState = _genreStates[genreName];
+      if (currentState == null) {
+        _genreStates[genreName] = 1; // Первый тап: включаем
+      } else if (currentState == 1) {
+        _genreStates[genreName] = -1; // Второй тап: исключаем (негативный фильтр)
+      } else {
+        _genreStates.remove(genreName); // Третий тап: сброс в нейтральное положение
+      }
+    });
   }
 
-  // --- КРАСИВЫЙ СКОЛЬЗЯЩИЙ СВИЧЕР (ИСПРАВЛЕНИЕ ПУНКТА 1 И 3) ---
   Widget _buildSlidingSegmentedControl() {
     bool isMovie = _contentType == 'movie';
     return Container(
@@ -151,9 +155,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF00E5FF),
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(color: const Color(0xFF00E5FF).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2)),
-                  ],
                 ),
               ),
             ),
@@ -165,10 +166,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _handleContentTypeChange('movie'),
                   child: Center(
-                    child: Text(
-                      'Фильмы',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isMovie ? Colors.black : Colors.white60),
-                    ),
+                    child: Text('Фильмы', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isMovie ? Colors.black : Colors.white60)),
                   ),
                 ),
               ),
@@ -177,10 +175,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _handleContentTypeChange('tv'),
                   child: Center(
-                    child: Text(
-                      'Сериалы',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: !isMovie ? Colors.black : Colors.white60),
-                    ),
+                    child: Text('Сериалы', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: !isMovie ? Colors.black : Colors.white60)),
                   ),
                 ),
               ),
@@ -191,14 +186,29 @@ class _FiltersSheetState extends State<FiltersSheet> {
     );
   }
 
-  // Сброс несовместимых фильтров при переключении
   void _handleContentTypeChange(String type) {
     if (_contentType == type) return;
     setState(() {
       _contentType = type;
-      _selectedGenresText.clear(); // Сбрасываем жанры
-      _selectedActors.clear();     // Сбрасываем актеров
+      _genreStates.clear(); // Сбрасываем карту жанров при смене вкладки контента
+      _selectedActors.clear();     
     });
+  }
+
+  Widget _buildLogicToggle(bool isAnd, ValueChanged<bool> onChanged) {
+    return ToggleButtons(
+      isSelected: [!isAnd, isAnd],
+      onPressed: (index) => onChanged(index == 1),
+      borderRadius: BorderRadius.circular(8),
+      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+      selectedColor: const Color(0xFF00E5FF),
+      color: Colors.white54,
+      constraints: const BoxConstraints(minHeight: 30, minWidth: 60),
+      children: const [
+        Text('ИЛИ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+        Text('И', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
+    );
   }
 
   @override
@@ -285,16 +295,37 @@ class _FiltersSheetState extends State<FiltersSheet> {
                         _buildLogicToggle(_isGenreAndLogic, (val) => setState(() => _isGenreAndLogic = val)),
                       ],
                     ),
+                    const SizedBox(height: 4),
+                    const Text('Жми один раз для добавления, два раза — для исключения', style: TextStyle(fontSize: 11, color: Colors.white30)),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8, runSpacing: 8,
                       children: _genresMap.keys.map((genre) {
-                        final isSelected = _selectedGenresText.contains(genre);
-                        return FilterChip(
-                          label: Text(genre, style: TextStyle(color: isSelected ? Colors.black : Colors.white70)),
-                          selected: isSelected, selectedColor: const Color(0xFF00E5FF),
-                          backgroundColor: Colors.black45, checkmarkColor: Colors.black,
-                          onSelected: (selected) => setState(() => selected ? _selectedGenresText.add(genre) : _selectedGenresText.remove(genre)),
+                        final state = _genreStates[genre];
+                        
+                        // Кастомизируем цвета под каждое состояние
+                        Color chipColor = Colors.black45;
+                        Color textColor = Colors.white70;
+                        IconData? prefixIcon;
+
+                        if (state == 1) {
+                          chipColor = const Color(0xFF00E5FF); // Включен — яркий бирюзовый
+                          textColor = Colors.black;
+                          prefixIcon = Icons.add;
+                        } else if (state == -1) {
+                          chipColor = Colors.redAccent.withValues(alpha: 0.3); // Исключен — приглушенный красный
+                          textColor = Colors.redAccent;
+                          prefixIcon = Icons.remove;
+                        }
+
+                        return RawChip(
+                          label: Text(genre, style: TextStyle(color: textColor, fontWeight: state != null ? FontWeight.bold : FontWeight.normal)),
+                          avatar: prefixIcon != null ? Icon(prefixIcon, size: 14, color: textColor) : null,
+                          backgroundColor: chipColor,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          // ИСПРАВЛЕНО: Рамка для исключенного состояния задается через параметр side самого RawChip
+                          side: state == -1 ? const BorderSide(color: Colors.redAccent, width: 1) : BorderSide.none,
+                          onPressed: () => _toggleGenreState(genre),
                         );
                       }).toList(),
                     ),
@@ -362,13 +393,36 @@ class _FiltersSheetState extends State<FiltersSheet> {
             width: double.infinity, height: 55,
             child: ElevatedButton(
               onPressed: () {
-                List<int> genreIds = _selectedGenresText.map((name) => _getGenreId(name, _contentType)).toList();
+                // Разделяем карту на включенные и исключенные жанры
+                final Set<String> positiveGenresText = {};
+                final List<String> formattedGenreQueries = [];
+
+                _genreStates.forEach((name, state) {
+                  final int id = _getGenreId(name, _contentType);
+                  if (state == 1) {
+                    positiveGenresText.add(name);
+                    formattedGenreQueries.add(id.toString());
+                  } else if (state == -1) {
+                    // Формат TMDB для негативного фильтра: !ID
+                    formattedGenreQueries.add('!$id');
+                  }
+                });
+
                 Navigator.pop(context, {
-                  'rating': _rating, 'year': _year, 'runtime': _runtime,
-                  'genresText': _selectedGenresText, 'genresIds': genreIds,
-                  'isGenreAndLogic': _isGenreAndLogic, 'selectedActors': _selectedActors,
-                  'castIds': _selectedActors.map((a) => a['id'] as int).toList(), 'isCastAndLogic': _isCastAndLogic,
-                  'contentType': _contentType, 'minRuntime': _runtime.start.toInt(),
+                  'rating': _rating, 
+                  'year': _year, 
+                  'runtime': _runtime,
+                  'genresText': positiveGenresText, // Сохраняем текстовые теги для обратной совместимости UI
+                  
+                  // Продвинутая строка ID для инжекта напрямую в API (например: "28,!16,12")
+                  'genresQuery': formattedGenreQueries.join(_isGenreAndLogic ? ',' : '|'),
+                  
+                  'isGenreAndLogic': _isGenreAndLogic, 
+                  'selectedActors': _selectedActors,
+                  'castIds': _selectedActors.map((a) => a['id'] as int).toList(), 
+                  'isCastAndLogic': _isCastAndLogic,
+                  'contentType': _contentType, 
+                  'minRuntime': _runtime.start.toInt(),
                   'maxRuntime': _runtime.end == 240.0 ? null : _runtime.end.toInt(),
                 });
               },

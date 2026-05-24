@@ -28,10 +28,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // Хранилище фильтров
   RangeValues _currentRating = const RangeValues(0.0, 10.0);
-  RangeValues _currentYear = RangeValues(1950.0, 2026.0);
+  RangeValues _currentYear = const RangeValues(1950.0, 2026.0);
   RangeValues _currentRuntime = const RangeValues(40.0, 240.0);
   Set<String> _currentGenresText = {};
-  List<int> _currentGenresIds = [];
+  String _currentGenresQuery = ''; // Новое query-хранилище для позитивных и негативных жанров
   bool _isGenreAndLogic = false;
   List<Map<String, dynamic>> _selectedActors = [];
   bool _isCastAndLogic = false;
@@ -82,14 +82,12 @@ class _SearchScreenState extends State<SearchScreen> {
         _currentPage = 1;
       });
 
-      // При текстовом поиске TMDB возвращает результаты без явного total_pages в простом методе,
-      // поэтому для пагинации текстового поиска заложим базовый лимит страниц
       final results = await _tmdbService.searchMovies(query, contentType: _currentContentType);
       
       if (mounted) {
         setState(() {
           _movies = results;
-          _totalPages = 5; // Ставим разумный лимит для текстовых страниц
+          _totalPages = 5; // Базовый лимит страниц для текстового поиска
           _isLoading = false;
         });
       }
@@ -123,7 +121,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _currentYear = result['year'];
         _currentRuntime = result['runtime'];
         _currentGenresText = result['genresText'];
-        _currentGenresIds = result['genresIds'];
+        _currentGenresQuery = result['genresQuery']; // Получаем готовую строку (включая инвертированные жанры с "!")
         _isGenreAndLogic = result['isGenreAndLogic'];
         _selectedActors = result['selectedActors'];
         _isCastAndLogic = result['isCastAndLogic'];
@@ -139,22 +137,20 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _fetchByFilters() async {
-    int primaryGenre = _currentGenresIds.isNotEmpty 
-        ? _currentGenresIds.first 
-        : (_currentContentType == 'movie' ? 28 : 10759); 
-
+// ИСПРАВЛЕНО: Убрали лишний текст перед объявлением метода
+ Future<void> _fetchByFilters() async {
+    // Передаем готовую собранную query-строку жанров в метод получения данных
     final data = await _tmdbService.getMoviesByGenre(
-      primaryGenre,
+      _currentGenresQuery, 
       page: _currentPage,
       minRating: _currentRating.start,
       maxRating: _currentRating.end,
       minYear: _currentYear.start.toInt(),
       maxYear: _currentYear.end.toInt(),
       castIds: _selectedActors.map((a) => a['id'] as int).toList(),
-      isCastAndLogic: _isCastAndLogic,
+      isCastAndLogic: _isCastAndLogic, // ИСПРАВЛЕНО: заменили = на :
       minRuntime: _currentRuntime.start.toInt(),
-      maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
+      maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(), // ИСПРАВЛЕНО: убрали лишнюю скобку )
       contentType: _currentContentType, 
     );
 
@@ -175,9 +171,8 @@ class _SearchScreenState extends State<SearchScreen> {
     List<dynamic> newItems = [];
 
     if (_isFilterMode) {
-      int primaryGenre = _currentGenresIds.isNotEmpty ? _currentGenresIds.first : 28;
       final data = await _tmdbService.getMoviesByGenre(
-        primaryGenre,
+        _currentGenresQuery,
         page: nextPage,
         minRating: _currentRating.start,
         maxRating: _currentRating.end,
@@ -191,10 +186,9 @@ class _SearchScreenState extends State<SearchScreen> {
       );
       newItems = data['results'] ?? [];
     } else {
-      // Для текста делаем запрос следующей страницы через кастомный вызов Dio (внедряя page)
       try {
         final endpoint = _currentContentType == 'movie' ? '/search/movie' : '/search/tv';
-        final dio = _tmdbService.getDioInstance(); // Получим Dio из сервиса
+        final dio = _tmdbService.getDioInstance(); 
         final response = await dio.get(
           endpoint,
           queryParameters: {
@@ -332,7 +326,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildMoviesGrid() {
     return GridView.builder(
-      controller: _scrollController, // Подключаем контроллер листания
+      controller: _scrollController, 
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -341,7 +335,7 @@ class _SearchScreenState extends State<SearchScreen> {
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
-      itemCount: _movies.length + (_isLoadingMore ? 2 : 0), // Добавляем места под лоадеры внизу
+      itemCount: _movies.length + (_isLoadingMore ? 2 : 0), 
       itemBuilder: (context, index) {
         if (index >= _movies.length) {
           return const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)));

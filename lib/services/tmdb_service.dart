@@ -94,7 +94,7 @@ class TMDBService {
   }
 
   Future<Map<String, dynamic>> getMoviesByGenre(
-    int genreId, {
+    dynamic genreId, {
     int page = 1,
     double minRating = 0.0,
     double maxRating = 10.0,
@@ -121,7 +121,9 @@ class TMDBService {
         '$dateMaxKey': '$maxYear-12-31',
       };
 
-      params['with_genres'] = genreId.toString();
+      if (genreId != null && genreId.toString().isNotEmpty) {
+        params['with_genres'] = genreId.toString();
+      }
 
       if (contentType == 'tv') {
         params['vote_count.gte'] = 40; 
@@ -155,7 +157,7 @@ class TMDBService {
     double maxRating = 10.0,
     int minYear = 1950,
     int maxYear = 2026,
-    List<int> genreIds = const [],
+    dynamic genreIds = '',
     bool isGenreAndLogic = false,
     List<int> castIds = const [],
     bool isCastAndLogic = false,
@@ -183,9 +185,12 @@ class TMDBService {
         params['vote_count.gte'] = 100; 
       }
 
-      if (genreIds.isNotEmpty) {
+      if (genreIds is String && genreIds.isNotEmpty) {
+        params['with_genres'] = genreIds;
+      } else if (genreIds is List && genreIds.isNotEmpty) {
         params['with_genres'] = genreIds.join(isGenreAndLogic ? ',' : '|');
       }
+
       if (castIds.isNotEmpty) {
         params['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
       }
@@ -212,7 +217,7 @@ class TMDBService {
     }
   }
 
-// Официальный поиск рейтингов Кинопоиска через ключевые слова по Swagger
+  // Официальный поиск рейтингов Кинопоиска через ключевые слова по Swagger
   Future<Map<String, dynamic>?> getKinopoiskData(String? title, String? year) async {
     if (title == null || title.isEmpty) return null;
 
@@ -224,7 +229,7 @@ class TMDBService {
           'keyword': title,
           'page': 1,
         },
-        options: Options(headers: {'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b'}) // Твой рабочий ключ Кинопоиска
+        options: Options(headers: {'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b'})
       );
 
       final List<dynamic> films = searchResponse.data['films'] ?? [];
@@ -233,7 +238,7 @@ class TMDBService {
       // 2. Фильтруем результаты, сопоставляя год выпуска из TMDB
       final exactMatch = films.firstWhere(
         (f) => year != null && f['year']?.toString() == year,
-        orElse: () => films.first, // Если точного года нет, берем самое релевантное первое совпадение
+        orElse: () => films.first,
       );
 
       final int? kinopoiskId = exactMatch['filmId'] as int?;
@@ -245,9 +250,8 @@ class TMDBService {
         options: Options(headers: {'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b'})
       );
 
-      return mainResponse.data; // Возвращает полную карточку, где точно есть 'ratingKinopoisk'
+      return mainResponse.data;
     } catch (e) {
-      // Ловим любые сетевые ошибки, чтобы приложение не падало
       return null;
     }
   }
