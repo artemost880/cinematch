@@ -227,8 +227,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
         _currentIndex++;
         _blurValue = 0.0;
         _darkenValue = 0.0;
-        _sheetController.dispose();
-        _initSheetController();
+        // ИСПРАВЛЕНО: убрали некорректные вызовы к контроллеру шторки
       });
       _loadFullDataForCurrent(); // Грузим данные для следующей карточки
     }
@@ -349,7 +348,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
                 const Divider(color: Colors.white10, height: 60),
                 _buildSection('Рецензии коммьюнити', _buildReviewPlaceholder()),
                 
-                const SizedBox(height: 160), // Большой отступ для кнопок Лайк/Дислайк
+                const SizedBox(height: 160), 
               ],
             ),
           ),
@@ -432,7 +431,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
       icon: const Icon(Icons.style), 
       label: const Text('В МОЙ ПУЛ МЭТЧЕЙ', style: TextStyle(fontWeight: FontWeight.bold))
     )
-  );б
+  );
 
   // --- ЭКРАН ИТОГОВ "МОИ МЭТЧИ" ---
   Widget _buildMatchesSummary() {
