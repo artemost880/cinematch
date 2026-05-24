@@ -29,6 +29,9 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _isGenreAndLogic = false;
   List<Map<String, dynamic>> _selectedActors = [];
   bool _isCastAndLogic = false;
+  
+  // НОВОЕ: Хранилище типа контента
+  String _currentContentType = 'movie'; 
 
   @override
   void dispose() {
@@ -52,10 +55,11 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce = Timer(const Duration(milliseconds: 600), () async {
       setState(() {
         _isLoading = true;
-        _isFilterMode = false; // Перешли в текстовый режим
+        _isFilterMode = false; 
       });
 
-      final results = await _tmdbService.searchMovies(query);
+      // Добавлен contentType
+      final results = await _tmdbService.searchMovies(query, contentType: _currentContentType);
       
       if (mounted) {
         setState(() {
@@ -68,7 +72,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // --- ПОИСК ПО ФИЛЬТРАМ ---
   void _openFilters() async {
-    FocusScope.of(context).unfocus(); // Прячем клавиатуру
+    FocusScope.of(context).unfocus(); 
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -82,6 +86,7 @@ class _SearchScreenState extends State<SearchScreen> {
         initialGenreLogic: _isGenreAndLogic,
         initialCastLogic: _isCastAndLogic,
         initialRuntime: _currentRuntime,
+        initialContentType: _currentContentType, // ИСПРАВЛЕНИЕ ОШИБКИ
         showGenres: true,
       ),
     );
@@ -96,9 +101,10 @@ class _SearchScreenState extends State<SearchScreen> {
         _isGenreAndLogic = result['isGenreAndLogic'];
         _selectedActors = result['selectedActors'];
         _isCastAndLogic = result['isCastAndLogic'];
+        _currentContentType = result['contentType']; // Обновляем тип из шторки
         
-        _searchController.clear(); // Стираем текст
-        _isFilterMode = true; // Переходим в режим фильтров
+        _searchController.clear(); 
+        _isFilterMode = true; 
         _isLoading = true;
       });
 
@@ -108,8 +114,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _fetchByFilters() async {
     // В TMDB /discover/movie работает лучше, если есть хотя бы 1 жанр. 
-    // Если юзер ничего не выбрал - ставим 28 (Экшен) по умолчанию
-    int primaryGenre = _currentGenresIds.isNotEmpty ? _currentGenresIds.first : 28;
+    int primaryGenre = _currentGenresIds.isNotEmpty 
+        ? _currentGenresIds.first 
+        : (_currentContentType == 'movie' ? 28 : 10759); // 28 - Экшен Фильмы, 10759 - Экшен Сериалы
 
     final data = await _tmdbService.getMoviesByGenre(
       primaryGenre,
@@ -121,6 +128,7 @@ class _SearchScreenState extends State<SearchScreen> {
       isCastAndLogic: _isCastAndLogic,
       minRuntime: _currentRuntime.start.toInt(),
       maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
+      contentType: _currentContentType, // Добавлен contentType
     );
 
     if (mounted) {
@@ -149,7 +157,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       onChanged: _onSearchChanged,
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                       decoration: InputDecoration(
-                        hintText: 'Название фильма...',
+                        hintText: 'Название фильма или сериала...',
                         hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
                         prefixIcon: const Icon(Icons.search, color: Colors.white54),
                         suffixIcon: _searchController.text.isNotEmpty
@@ -184,6 +192,40 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
             
+            // НОВОЕ: Тумблер Фильмы / Сериалы
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ToggleButtons(
+                      isSelected: [_currentContentType == 'movie', _currentContentType == 'tv'],
+                      onPressed: (index) {
+                        setState(() {
+                          _currentContentType = index == 0 ? 'movie' : 'tv';
+                        });
+                        // Автоматически перезапускаем поиск при переключении
+                        if (_isFilterMode) {
+                          _fetchByFilters();
+                        } else if (_searchController.text.isNotEmpty) {
+                          _onSearchChanged(_searchController.text);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                      selectedColor: const Color(0xFF00E5FF),
+                      color: Colors.white54,
+                      constraints: const BoxConstraints(minHeight: 40),
+                      children: const [
+                        Text('Фильмы', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Сериалы', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             // Если включен режим фильтров — показываем плашку для сброса
             if (_isFilterMode)
               Padding(
@@ -254,7 +296,10 @@ class _SearchScreenState extends State<SearchScreen> {
           onTap: () async {
             FocusScope.of(context).unfocus();
             showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))));
-            final fullData = await _tmdbService.getMovieDetails(movie['id']);
+            
+            // Добавлен contentType
+            final fullData = await _tmdbService.getMovieDetails(movie['id'], contentType: _currentContentType);
+            
             if (mounted) Navigator.pop(context);
             if (fullData != null && mounted) {
               Navigator.push(context, MaterialPageRoute(builder: (context) => MovieDetailsScreen(movie: fullData)));

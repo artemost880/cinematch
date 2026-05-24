@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math'; 
+import 'dart:math'; // Для функции max()
 import '../services/room_service.dart';
 import 'filters_sheet.dart';
-import 'room_session_screen.dart'; 
+import 'room_session_screen.dart';
 
 class RoomWaitingScreen extends StatefulWidget {
   final String roomCode;
@@ -24,11 +24,12 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
   Set<String> _currentGenresText = {};
   List<int> _currentGenresIds = [];
   
-  // Новые фильтры
+  // Дополнительные параметры фильтрации
   RangeValues _currentRuntime = const RangeValues(40.0, 240.0);
   bool _isGenreAndLogic = false;
   List<Map<String, dynamic>> _selectedActors = [];
   bool _isCastAndLogic = false;
+  String _currentContentType = 'movie'; // 'movie' или 'tv'
 
   void _showFiltersBottomSheet() async {
     final result = await showModalBottomSheet<Map<String, dynamic>>(
@@ -36,8 +37,11 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
       builder: (context) => FiltersSheet(
         initialRating: _currentRating, initialYear: _currentYear,
         initialGenres: _currentGenresText, showGenres: true,
-        initialActors: _selectedActors, initialGenreLogic: _isGenreAndLogic,
-        initialCastLogic: _isCastAndLogic, initialRuntime: _currentRuntime,
+        initialActors: _selectedActors,
+        initialGenreLogic: _isGenreAndLogic,
+        initialCastLogic: _isCastAndLogic,
+        initialRuntime: _currentRuntime,
+        initialContentType: _currentContentType,
       ),
     );
 
@@ -51,6 +55,7 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
         _isGenreAndLogic = result['isGenreAndLogic'];
         _selectedActors = result['selectedActors'];
         _isCastAndLogic = result['isCastAndLogic'];
+        _currentContentType = result['contentType'];
       });
     }
   }
@@ -65,13 +70,13 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
         minYear: _currentYear.start.toInt(), 
         maxYear: _currentYear.end.toInt(),
         genreIds: _currentGenresIds,
-        // Пробрасываем новые фильтры в сервис комнат
-        isGenreAndLogic: _isGenreAndLogic, 
-        castIds: _selectedActors.map((a) => a['id'] as int).toList(), 
-        isCastAndLogic: _isCastAndLogic, 
-        minRuntime: _currentRuntime.start.toInt(), 
-        maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(), 
-        deckSize: deckSize, 
+        deckSize: deckSize,
+        isGenreAndLogic: _isGenreAndLogic,
+        castIds: _selectedActors.map((a) => a['id'] as int).toList(),
+        isCastAndLogic: _isCastAndLogic,
+        minRuntime: _currentRuntime.start.toInt(),
+        maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
+        contentType: _currentContentType, // Передаем тип контента в сервис комнат
       );
     } catch (e) {
       if (mounted) {
@@ -117,7 +122,9 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _onWillPop();
-        if (shouldPop && context.mounted) Navigator.of(context).pop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -134,10 +141,15 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
         body: StreamBuilder<DocumentSnapshot>(
           stream: _roomService.listenToRoom(widget.roomCode),
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)));
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)));
+            }
+
             if (!snapshot.hasData || !snapshot.data!.exists) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                if (mounted) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                }
               });
               return const Center(child: Text('Комната закрыта...'));
             }
@@ -153,7 +165,12 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
             if (status == 'active') {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (mounted) {
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => RoomSessionScreen(roomCode: widget.roomCode)));
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => RoomSessionScreen(roomCode: widget.roomCode),
+                    ),
+                  );
                 }
               });
             }
@@ -183,30 +200,85 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
                   const SizedBox(height: 32),
 
                   if (isCreator) ...[
-                    const Align(alignment: Alignment.centerLeft, child: Text('Настройки комнаты:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white70))),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Настройки комнаты:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white70)),
+                    ),
                     const SizedBox(height: 16),
                     
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Мэтч от:', style: TextStyle(fontSize: 16)), Text('$minLikes чел.', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF)))]),
-                    Slider(
-                      value: minLikes.toDouble(), min: 1, max: max(2.0, participants.length.toDouble()), divisions: max(1, participants.length - 1),
-                      activeColor: const Color(0xFF00E5FF), inactiveColor: Colors.grey[800],
-                      onChanged: participants.length > 1 ? (val) => _roomService.updateSettings(widget.roomCode, minLikes: val.toInt(), deckSize: deckSize) : null,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Мэтч от:', style: TextStyle(fontSize: 16)),
+                        Text('$minLikes чел.', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
+                      ],
                     ),
-                    if (participants.length == 1) const Text('Ожидайте других игроков, чтобы настроить мэтч', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    Slider(
+                      value: minLikes.toDouble(),
+                      min: 1, 
+                      max: max(2.0, participants.length.toDouble()),
+                      divisions: max(1, participants.length - 1),
+                      activeColor: const Color(0xFF00E5FF),
+                      inactiveColor: Colors.grey[800],
+                      onChanged: participants.length > 1 
+                        ? (val) => _roomService.updateSettings(widget.roomCode, minLikes: val.toInt(), deckSize: deckSize)
+                        : null,
+                    ),
+                    if (participants.length == 1)
+                      const Text('Ожидайте других игроков, чтобы настроить мэтч', style: TextStyle(color: Colors.white54, fontSize: 12)),
                     const SizedBox(height: 16),
 
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Размер колоды:', style: TextStyle(fontSize: 16)), Text('$deckSize фильмов', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.amber))]),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Размер колоды:', style: TextStyle(fontSize: 16)),
+                        Text('$deckSize ${_currentContentType == 'tv' ? 'сериалов' : 'фильмов'}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.amber)),
+                      ],
+                    ),
                     Slider(
-                      value: deckSize.toDouble(), min: 5, max: 50, divisions: 9, activeColor: Colors.amber, inactiveColor: Colors.grey[800],
+                      value: deckSize.toDouble(),
+                      min: 5, max: 50, divisions: 9,
+                      activeColor: Colors.amber,
+                      inactiveColor: Colors.grey[800],
                       onChanged: (val) => _roomService.updateSettings(widget.roomCode, minLikes: minLikes, deckSize: val.toInt()),
                     ),
                     const SizedBox(height: 32),
 
-                    SizedBox(width: double.infinity, height: 55, child: OutlinedButton.icon(onPressed: _showFiltersBottomSheet, style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), icon: const Icon(Icons.tune), label: const Text('ФИЛЬТРЫ ДЛЯ TMDB', style: TextStyle(fontWeight: FontWeight.bold)))),
+                    SizedBox(
+                      width: double.infinity, height: 55,
+                      child: OutlinedButton.icon(
+                        onPressed: _showFiltersBottomSheet,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white, side: const BorderSide(color: Colors.white24),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        icon: const Icon(Icons.tune), label: const Text('ФИЛЬТРЫ ДЛЯ TMDB', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _isLoading ? null : () => _startSession(deckSize), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E5FF), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), child: _isLoading ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)) : const Text('НАЧАТЬ ПОДБОР', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))),
+                    SizedBox(
+                      width: double.infinity, height: 55,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : () => _startSession(deckSize),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00E5FF), foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: _isLoading 
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                            : const Text('НАЧАТЬ ПОДБОР', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
                   ] else ...[
-                    const SizedBox(height: 40), const CircularProgressIndicator(color: Color(0xFF00E5FF)), const SizedBox(height: 24), const Text('Ожидаем создателя...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 8), const Text('Создатель настраивает колоду и скоро запустит подбор.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 40),
+                    const CircularProgressIndicator(color: Color(0xFF00E5FF)),
+                    const SizedBox(height: 24),
+                    const Text('Ожидаем создателя...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Создатель настраивает колоду и скоро запустит подбор.',
+                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white70),
+                    ),
                   ],
                 ],
               ),

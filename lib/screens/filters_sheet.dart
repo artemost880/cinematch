@@ -6,21 +6,23 @@ class FiltersSheet extends StatefulWidget {
   final RangeValues initialRating;
   final RangeValues initialYear;
   final Set<String> initialGenres;
-  final List<Map<String, dynamic>> initialActors; // НОВЫЙ ПАРАМЕТР: Актеры
-  final bool initialGenreLogic;                   // НОВЫЙ ПАРАМЕТР: Логика жанров
-  final bool initialCastLogic;                    // НОВЫЙ ПАРАМЕТР: Логика актеров
-  final RangeValues initialRuntime;               // НОВЫЙ ПАРАМЕТР: Хронометраж
-  final bool showGenres;
+  final List<Map<String, dynamic>>? initialActors;
+  final bool initialGenreLogic;
+  final bool initialCastLogic;
+  final RangeValues? initialRuntime;
+  final String initialContentType; // 'movie' или 'tv'
+  final bool showGenres; 
 
   const FiltersSheet({
     super.key,
     required this.initialRating,
     required this.initialYear,
     required this.initialGenres,
-    required this.initialActors,
-    required this.initialGenreLogic,
-    required this.initialCastLogic,
-    required this.initialRuntime,
+    this.initialActors,
+    this.initialGenreLogic = false,
+    this.initialCastLogic = false,
+    this.initialRuntime,
+    this.initialContentType = 'movie',
     this.showGenres = true,
   });
 
@@ -31,19 +33,23 @@ class FiltersSheet extends StatefulWidget {
 class _FiltersSheetState extends State<FiltersSheet> {
   final TMDBService _tmdbService = TMDBService();
 
+  // Основные фильтры
   late RangeValues _rating;
   late RangeValues _year;
-  late RangeValues _runtime;
+  late RangeValues _runtime; 
   late Set<String> _selectedGenresText;
   late bool _isGenreAndLogic;
   late List<Map<String, dynamic>> _selectedActors;
   late bool _isCastAndLogic;
+  late String _contentType; // Состояние для тумблера: фильмы / сериалы
 
+  // Поиск актеров
   final TextEditingController _actorSearchController = TextEditingController();
   List<dynamic> _actorSearchResults = [];
   bool _isSearchingActor = false;
   Timer? _debounce;
 
+  // Базовый справочник жанров для фильмов
   final Map<String, int> _genresMap = {
     'Экшен': 28, 'Приключения': 12, 'Анимация': 16, 'Комедия': 35,
     'Криминал': 80, 'Документальный': 99, 'Драма': 18, 'Семейный': 10751,
@@ -55,14 +61,14 @@ class _FiltersSheetState extends State<FiltersSheet> {
   @override
   void initState() {
     super.initState();
-    // Инициализируем стейт из новых параметров
     _rating = widget.initialRating;
     _year = widget.initialYear;
     _selectedGenresText = Set.from(widget.initialGenres);
-    _selectedActors = List.from(widget.initialActors);
+    _selectedActors = List.from(widget.initialActors ?? []);
     _isGenreAndLogic = widget.initialGenreLogic;
     _isCastAndLogic = widget.initialCastLogic;
-    _runtime = widget.initialRuntime;
+    _runtime = widget.initialRuntime ?? const RangeValues(40.0, 240.0);
+    _contentType = widget.initialContentType;
   }
 
   @override
@@ -72,25 +78,57 @@ class _FiltersSheetState extends State<FiltersSheet> {
     super.dispose();
   }
 
-  void _onActorSearchChanged(String query) {
+  // Умный маппинг жанров TMDB (у фильмов и сериалов разные ID)
+  int _getGenreId(String name, String type) {
+    if (type == 'movie') {
+      return _genresMap[name] ?? 28;
+    } else {
+      switch (name) {
+        case 'Экшен':
+        case 'Приключения':
+          return 10759; // Action & Adventure для сериалов
+        case 'Анимация':
+          return 16;
+        case 'Комедия':
+          return 35;
+        case 'Криминал':
+          return 80;
+        case 'Документальный':
+          return 99;
+        case 'Драма':
+          return 18;
+        case 'Семейный':
+          return 10751;
+        case 'Фантастика':
+        case 'Фэнтези':
+          return 10765; // Sci-Fi & Fantasy для сериалов
+        case 'Детектив':
+          return 9648;
+        case 'Ужасы':
+          return 27;
+        case 'Военный':
+        case 'История':
+          return 10768; // War & Politics для сериалов
+        default:
+          return _genresMap[name] ?? 35;
+      }
+    }
+  }
+
+void _onActorSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    
     if (query.length < 3) {
-      setState(() {
-        _actorSearchResults = [];
-        _isSearchingActor = false;
-      });
+      setState(() { _actorSearchResults = []; _isSearchingActor = false; });
       return;
     }
 
     setState(() => _isSearchingActor = true);
-
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       final results = await _tmdbService.searchPerson(query);
       if (mounted) {
-        setState(() {
-          _actorSearchResults = results;
-          _isSearchingActor = false;
+        setState(() { 
+          _actorSearchResults = results; // ИСПРАВЛЕНО: убрали случайный бэкслеш
+          _isSearchingActor = false; 
         });
       }
     });
@@ -101,7 +139,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
       isSelected: [!isAnd, isAnd],
       onPressed: (index) => onChanged(index == 1),
       borderRadius: BorderRadius.circular(8),
-      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2), // Исправлено withOpacity
+      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
       selectedColor: const Color(0xFF00E5FF),
       color: Colors.white54,
       constraints: const BoxConstraints(minHeight: 30, minWidth: 60),
@@ -134,10 +172,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Настройки подбора', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
-              IconButton(
-                icon: const Icon(Icons.close, color: Colors.white54),
-                onPressed: () => Navigator.pop(context),
-              ),
+              IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(context)),
             ],
           ),
           const Divider(color: Colors.white10, height: 30),
@@ -148,6 +183,32 @@ class _FiltersSheetState extends State<FiltersSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // --- ТУМБЛЕР ВЫБОРА КОНТЕНТА ---
+                  const Text('Тип контента', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ToggleButtons(
+                          isSelected: [_contentType == 'movie', _contentType == 'tv'],
+                          onPressed: (index) => setState(() {
+                            _contentType = index == 0 ? 'movie' : 'tv';
+                          }),
+                          borderRadius: BorderRadius.circular(12),
+                          fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                          selectedColor: const Color(0xFF00E5FF),
+                          color: Colors.white54,
+                          constraints: const BoxConstraints(minHeight: 45),
+                          children: const [
+                            Text('Фильмы', style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text('Сериалы', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -176,19 +237,22 @@ class _FiltersSheetState extends State<FiltersSheet> {
                   ),
                   const SizedBox(height: 24),
 
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Длительность (мин)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text('${_runtime.start.toInt()} - ${_runtime.end.toInt()}${_runtime.end == 240 ? '+' : ''}', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  RangeSlider(
-                    values: _runtime, min: 40, max: 240, divisions: 20,
-                    activeColor: Colors.greenAccent, inactiveColor: Colors.grey[800],
-                    onChanged: (values) => setState(() => _runtime = values),
-                  ),
-                  const SizedBox(height: 24),
+                  // Длительность имеет смысл выводить только для фильмов
+                  if (_contentType == 'movie') ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Длительность (мин)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('${_runtime.start.toInt()} - ${_runtime.end.toInt()}${_runtime.end == 240 ? '+' : ''}', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    RangeSlider(
+                      values: _runtime, min: 40, max: 240, divisions: 20,
+                      activeColor: Colors.greenAccent, inactiveColor: Colors.grey[800],
+                      onChanged: (values) => setState(() => _runtime = values),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
 
                   if (widget.showGenres) ...[
                     Row(
@@ -235,7 +299,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
                     onChanged: _onActorSearchChanged,
                     decoration: InputDecoration(
                       hintText: 'Введите имя (напр. Том Харди)',
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)), // Исправлено withOpacity
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
                       prefixIcon: const Icon(Icons.person_search, color: Colors.white54),
                       filled: true,
                       fillColor: Colors.black45,
@@ -261,7 +325,6 @@ class _FiltersSheetState extends State<FiltersSheet> {
                                   : Container(width: 40, height: 40, color: Colors.grey[800], child: const Icon(Icons.person, color: Colors.white54)),
                             ),
                             title: Text(person['name'] ?? ''),
-                            subtitle: Text('Популярность: ${person['popularity']?.toStringAsFixed(1) ?? 'N/A'}', style: const TextStyle(fontSize: 10, color: Colors.white54)),
                             onTap: () {
                               setState(() {
                                 if (!_selectedActors.any((a) => a['id'] == person['id'])) {
@@ -288,7 +351,7 @@ class _FiltersSheetState extends State<FiltersSheet> {
                                 ? Image.network(_tmdbService.getImageUrl(actor['profile_path']), fit: BoxFit.cover)
                                 : const Icon(Icons.person, size: 18),
                           ),
-                          backgroundColor: Colors.amber.withValues(alpha: 0.2), // Исправлено withOpacity
+                          backgroundColor: Colors.amber.withValues(alpha: 0.2),
                           deleteIconColor: Colors.amber,
                           onDeleted: () {
                             setState(() => _selectedActors.removeWhere((a) => a['id'] == actor['id']));
@@ -307,19 +370,19 @@ class _FiltersSheetState extends State<FiltersSheet> {
             width: double.infinity, height: 55,
             child: ElevatedButton(
               onPressed: () {
-                List<int> genreIds = _selectedGenresText.map((name) => _genresMap[name]!).toList();
+                List<int> genreIds = _selectedGenresText.map((name) => _getGenreId(name, _contentType)).toList();
                 
-                // Возвращаем все параметры обратно на экран
                 Navigator.pop(context, {
                   'rating': _rating,
                   'year': _year,
+                  'runtime': _runtime,
                   'genresText': _selectedGenresText,
                   'genresIds': genreIds,
                   'isGenreAndLogic': _isGenreAndLogic,
-                  'selectedActors': _selectedActors, // Возвращаем объекты актеров
+                  'selectedActors': _selectedActors,
                   'castIds': _selectedActors.map((a) => a['id'] as int).toList(),
                   'isCastAndLogic': _isCastAndLogic,
-                  'runtime': _runtime, // Возвращаем RangeValues целиком
+                  'contentType': _contentType,
                   'minRuntime': _runtime.start.toInt(),
                   'maxRuntime': _runtime.end == 240.0 ? null : _runtime.end.toInt(),
                 });

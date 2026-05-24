@@ -101,7 +101,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
     }
   }
 
-  // Фоновая загрузка тяжелых данных (Кадры, Актеры, Кинопоиск)
+  // Фоновая загрузка тяжелых данных с определением типа контента
   Future<void> _loadFullDataForCurrent() async {
     if (_currentIndex >= _deck.length) return;
     
@@ -112,7 +112,9 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
     });
 
     final lightMovie = _deck[_currentIndex];
-    final fullData = await _tmdbService.getMovieDetails(lightMovie['id']);
+    final String contentType = lightMovie['room_item_type'] ?? 'movie'; // Извлекаем вшитый тип контента
+    
+    final fullData = await _tmdbService.getMovieDetails(lightMovie['id'], contentType: contentType);
     
     if (fullData != null && mounted && lightMovie['id'] == _deck[_currentIndex]['id']) {
       setState(() => _currentFullMovie = fullData);
@@ -190,7 +192,9 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
                   const SizedBox(height: 20),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.network(_tmdbService.getImageUrl(movie['poster_path']), height: 250, fit: BoxFit.cover),
+                    child: movie['poster_path'] != null 
+                        ? Image.network(_tmdbService.getImageUrl(movie['poster_path']), height: 250, fit: BoxFit.cover)
+                        : Container(width: 170, height: 250, color: Colors.grey[900], child: const Icon(Icons.movie, size: 50)),
                   ),
                   const SizedBox(height: 16),
                   Text(movie['title'] ?? '', textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
@@ -279,18 +283,21 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
     );
   }
 
-  // --- УНИФИЦИРОВАННАЯ КАРТОЧКА ФИЛЬМА ---
+  // --- УНИФИЦИРОВАННАЯ КАРТОЧКА ФИЛЬМА / СЕРИАЛА ---
   Widget _buildMovieCard(Map<String, dynamic> baseMovie) {
-    // Используем полные данные, если они уже загрузились, иначе показываем базу
     final movie = _currentFullMovie ?? baseMovie;
 
     return Stack(
       key: ValueKey(movie['id']),
       children: [
-        Positioned.fill(child: Image.network(_tmdbService.getImageUrl(movie['poster_path']), fit: BoxFit.cover)),
+        Positioned.fill(
+          child: movie['poster_path'] != null 
+              ? Image.network(_tmdbService.getImageUrl(movie['poster_path']), fit: BoxFit.cover)
+              : Container(color: Colors.grey[900], child: const Center(child: Icon(Icons.movie, size: 100, color: Colors.white24))),
+        ),
         if (_blurValue > 0)
           Positioned.fill(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: _blurValue, sigmaY: _blurValue), child: Container(color: Colors.black.withValues(alpha: _darkenValue)))),
-        Positioned.fill(child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black38, Colors.transparent, Colors.black87])))),
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black38, Colors.transparent, Colors.black87])))),
         
         DraggableScrollableSheet(
           controller: _sheetController,
@@ -306,18 +313,6 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
                 
                 // Заголовок
                 Text(movie['title'] ?? '', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, shadows: [Shadow(blurRadius: 10, color: Colors.black)])),
-                
-                // --- ДОБАВИЛИ ЖАНРЫ СЮДА ---
-                if (movie['genres'] != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 8),
-                    child: Text(
-                      (movie['genres'] as List).map((g) => g['name']).join(' • '),
-                      style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 14, fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                // -----------------------------
-                
                 const SizedBox(height: 12),
                 
                 // 1. ОЦЕНКИ
@@ -328,7 +323,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
                 _buildPoolButton(),
                 const SizedBox(height: 24),
 
-                // (Опционально) Ползунок личной оценки
+                // Ползунок личной оценки
                 _buildUserRatingSlider(),
                 const SizedBox(height: 24),
 
@@ -378,8 +373,6 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
     );
   }
 
-  // --- МЕТОДЫ ИЗВЛЕЧЕНИЯ ДАННЫХ И ПОСТРОЕНИЯ БЛОКОВ ---
-
   List<dynamic> _getWatchProviders(Map<String, dynamic> movie) {
     final ru = movie['watch/providers']?['results']?['RU'];
     return ru == null ? [] : [...(ru['flatrate'] ?? []), ...(ru['free'] ?? [])];
@@ -402,8 +395,6 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
 
   Widget _ratingItem(String l, String v, Color c) => Column(children: [Text(l, style: const TextStyle(fontSize: 10, color: Colors.white54)), Text(v, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: c))]);
 
-  Widget _buildPoolButton() => SizedBox(width: double.infinity, height: 55, child: ElevatedButton.icon(onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Добавлено в ваш пул мэтчей! 🃏', style: TextStyle(color: Colors.black)), backgroundColor: Color(0xFF00E5FF))), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E5FF), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), icon: const Icon(Icons.style), label: const Text('В МОЙ ПУЛ МЭТЧЕЙ', style: TextStyle(fontWeight: FontWeight.bold))));
-
   Widget _buildUserRatingSlider() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('МОЯ ОЦЕНКА', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white54)), Slider(value: _userRating, min: 0, max: 10, divisions: 10, label: _userRating.toInt().toString(), activeColor: const Color(0xFF00E5FF), onChanged: (v) => setState(() => _userRating = v))]);
 
   Widget _buildSection(String title, Widget child) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 12), child, const SizedBox(height: 24)]);
@@ -420,8 +411,28 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
 
   Widget _buildActorsList(Map<String, dynamic> movie) => SizedBox(height: 120, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: _getActors(movie).length, itemBuilder: (context, i) => Container(width: 80, margin: const EdgeInsets.only(right: 12), child: Column(children: [ClipOval(child: _getActors(movie)[i]['profile_path'] != null ? Image.network(_tmdbService.getImageUrl(_getActors(movie)[i]['profile_path']), width: 65, height: 65, fit: BoxFit.cover) : Container(width: 65, height: 65, color: Colors.white10, child: const Icon(Icons.person))), const SizedBox(height: 8), Text(_getActors(movie)[i]['name'] ?? '', maxLines: 2, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10))]))));
 
-  Widget _buildReviewPlaceholder() => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [CircleAvatar(radius: 12, backgroundColor: Colors.white12, child: Icon(Icons.person, size: 14)), SizedBox(width: 8), Text('Киноман_2026', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))), Spacer(), Icon(Icons.star, color: Colors.amber, size: 12), Text(' 10/10', style: TextStyle(fontSize: 11))]), SizedBox(height: 8), Text('Лучший фильм, что я видел за последнее время! Обязательно к просмотру.', style: TextStyle(color: Colors.white70, fontSize: 13))]));
+  Widget _buildReviewPlaceholder() => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)), child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [CircleAvatar(radius: 12, backgroundColor: Colors.white12, child: Icon(Icons.person, size: 14)), SizedBox(width: 8), Text('Киноман_2026', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))), Spacer(), Icon(Icons.star, color: Colors.amber, size: 12), Text(' 10/10', style: TextStyle(fontSize: 11))]), SizedBox(height: 8), Text('Лучший контент, что я видел за последнее время! Обязательно к просмотру.', style: TextStyle(color: Colors.white70, fontSize: 13))]));
 
+  Widget _buildPoolButton() => SizedBox(
+    width: double.infinity, height: 55, 
+    child: ElevatedButton.icon(
+      onPressed: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Добавлено в пул мэтчей! 🃏', style: TextStyle(color: Colors.black)), 
+            backgroundColor: Color(0xFF00E5FF)
+          )
+        );
+      }, 
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF00E5FF), 
+        foregroundColor: Colors.black, 
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+      ), 
+      icon: const Icon(Icons.style), 
+      label: const Text('В МОЙ ПУЛ МЭТЧЕЙ', style: TextStyle(fontWeight: FontWeight.bold))
+    )
+  );б
 
   // --- ЭКРАН ИТОГОВ "МОИ МЭТЧИ" ---
   Widget _buildMatchesSummary() {
@@ -460,14 +471,19 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
                         ),
                         child: Row(
                           children: [
-                            ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(_tmdbService.getImageUrl(movie['poster_path']), width: 60, height: 90, fit: BoxFit.cover)),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: movie['poster_path'] != null 
+                                  ? Image.network(_tmdbService.getImageUrl(movie['poster_path']), width: 60, height: 90, fit: BoxFit.cover)
+                                  : Container(width: 60, height: 90, color: Colors.grey[900], child: const Icon(Icons.movie, size: 20)),
+                            ),
                             const SizedBox(width: 15),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (isMatch) const Text('🔥 МЭТЧ!', style: TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                                  Text(movie['title'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 2),
+                                  Text(movie['title'] ?? 'Без названия', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 2),
                                   const SizedBox(height: 4),
                                   Text('Лайков: $likes из $_participantsCount', style: const TextStyle(color: Colors.white54, fontSize: 13)),
                                 ],
@@ -514,7 +530,7 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text('Выйти?'),
-        content: const Text('Вы покинуте подбор. Если участников станет меньше 2, комната закроется.'),
+        content: const Text('Вы покинете подбор. Если участников станет меньше 2, комната закроется.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('ОТМЕНА')),
           TextButton(onPressed: () => _roomService.leaveRoom(widget.roomCode), child: const Text('ВЫЙТИ', style: TextStyle(color: Colors.redAccent))),

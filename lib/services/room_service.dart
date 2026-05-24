@@ -23,6 +23,7 @@ class RoomService {
       'status': 'waiting',
       'min_likes': 2,
       'deck_size': 20,
+      'content_type': 'movie', // По умолчанию тип контента - фильмы
       'created_at': FieldValue.serverTimestamp(),
     });
     return code;
@@ -68,7 +69,7 @@ class RoomService {
     });
   }
 
-  // 5. ЗАПУСК ИГРЫ (Теперь с полным набором фильтров!)
+  // 5. ЗАПУСК ИГРЫ (С поддержкой переключения Фильмы / Сериалы)
   Future<void> startRoom(
     String code, {
     required double minRating,
@@ -82,9 +83,10 @@ class RoomService {
     bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
+    String contentType = 'movie', // НАШ НОВЫЙ ПАРАМЕТР
   }) async {
     
-    // 1. Формируем колоду
+    // 1. Формируем колоду под выбранный тип контента
     final deck = await _populateDeck(
       minRating: minRating,
       maxRating: maxRating,
@@ -97,16 +99,18 @@ class RoomService {
       isCastAndLogic: isCastAndLogic,
       minRuntime: minRuntime,
       maxRuntime: maxRuntime,
+      contentType: contentType,
     );
 
-    // 2. Меняем статус на active, что автоматически перекинет всех на экран свайпов
+    // 2. Меняем статус на active и записываем тип контента сессии в БД
     await _db.collection('rooms').doc(code).update({
       'status': 'active',
       'deck': deck,
+      'content_type': contentType, 
     });
   }
 
-  // 6. Формирование колоды (Молниеносная версия)
+  // 6. Формирование колоды (Молниеносная версия с инжектом типа контента)
   Future<List<dynamic>> _populateDeck({
     required double minRating,
     required double maxRating,
@@ -117,16 +121,19 @@ class RoomService {
     required bool isGenreAndLogic,
     required List<int> castIds,
     required bool isCastAndLogic,
+    required String contentType, // Передаем тип дальше в TMDBService
     int? minRuntime,
     int? maxRuntime,
   }) async {
     
-    // TMDB API ожидает хотя бы один базовый жанр для эндпоинта /discover/movie, 
-    // если он не выбран, берем 28 (Экшен) по умолчанию, чтобы запрос не упал.
-    int primaryGenre = genreIds.isNotEmpty ? genreIds.first : 28;
+    // Если список жанров пустой, берем дефолтный (28 - экшен для фильмов, 10759 - экшен для ТВ)
+    int primaryGenre = genreIds.isNotEmpty 
+        ? genreIds.first 
+        : (contentType == 'movie' ? 28 : 10759);
 
     final response = await _tmdb.getMoviesByGenre(
       primaryGenre,
+      page: 1,
       minRating: minRating,
       maxRating: maxRating,
       minYear: minYear,
@@ -135,14 +142,21 @@ class RoomService {
       isCastAndLogic: isCastAndLogic,
       minRuntime: minRuntime,
       maxRuntime: maxRuntime,
+      contentType: contentType,
     );
 
     List<dynamic> results = response['results'] ?? [];
-    results.shuffle(); // Перемешиваем, чтобы игры не были одинаковыми
+    results.shuffle(); // Перемешиваем карты
 
-    // Мы возвращаем "легкие" карточки без тяжелых запросов деталей.
-    // Экран RoomSessionScreen сам подгрузит актеров и трейлеры в фоне!
-    return results.take(deckSize).toList();
+    // Вшиваем тип контента в каждый элемент колоды, чтобы UI сессии знал, 
+    // к какому эндпоинту делать тяжелые фоновые запросы деталей
+    final processedResults = results.map((item) {
+      final Map<String, dynamic> mutableItem = Map<String, dynamic>.from(item);
+      mutableItem['room_item_type'] = contentType; 
+      return mutableItem;
+    }).toList();
+
+    return processedResults.take(deckSize).toList();
   }
 
   // 7. Голосование (Лайк)
@@ -152,14 +166,14 @@ class RoomService {
     await _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(voteRef);
       if (!snapshot.exists) {
-        // Первый лайк фильму
+        // Первый лайк элементу
         transaction.set(voteRef, {
           'movie': movie,
           'count': 1,
           'users': [uid]
         });
       } else {
-        // Защита от двойного голосования одного юзера
+        // Защита от повторного голоса одного юзера
         List<dynamic> users = snapshot.data()?['users'] ?? [];
         if (!users.contains(uid)) {
           transaction.update(voteRef, {
@@ -178,7 +192,7 @@ class RoomService {
       'deck': FieldValue.delete(),
     });
     
-    // Очищаем историю голосов
+    // Очищаем историю голосов в подколлекции
     final votes = await _db.collection('rooms').doc(code).collection('votes').get();
     for (var doc in votes.docs) {
       await doc.reference.delete();
