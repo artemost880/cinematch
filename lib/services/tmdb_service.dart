@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'dart:math';
-import 'package:url_launcher/url_launcher.dart';
 
 class TMDBService {
   final Dio _dio = Dio(BaseOptions(baseUrl: 'https://api.themoviedb.org/3'));

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:app_links/app_links.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/tmdb_service.dart';
 
 // Импорт экранов
@@ -19,6 +20,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  String _versionString = 'Beta';
   
   late AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
@@ -28,6 +30,7 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _initDeepLinks();
+    _loadVersion();
   }
 
   @override
@@ -78,6 +81,18 @@ class _MainScreenState extends State<MainScreen> {
           }
         }
       }
+    }
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final PackageInfo packageInfo = await PackageInfo.fromPlatform();
+      final version = packageInfo.version;
+      setState(() {
+        _versionString = '$version beta';
+      });
+    } catch (e) {
+      debugPrint('Ошибка загрузки версии: $e');
     }
   }
 
@@ -133,9 +148,9 @@ class _MainScreenState extends State<MainScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFF00E5FF), width: 0.5),
               ),
-              child: const Text(
-                'Beta 3',
-                style: TextStyle(
+              child: Text(
+                _versionString,
+                style: const TextStyle(
                   fontSize: 10,
                   color: Color(0xFF00E5FF),
                   fontWeight: FontWeight.bold,
