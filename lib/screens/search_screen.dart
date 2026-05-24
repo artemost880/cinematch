@@ -14,11 +14,17 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TMDBService _tmdbService = TMDBService();
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   Timer? _debounce;
 
   List<dynamic> _movies = [];
   bool _isLoading = false;
-  bool _isFilterMode = false; // true = ищем по фильтрам, false = по тексту
+  bool _isLoadingMore = false;
+  bool _isFilterMode = false; // true = по фильтрам, false = по тексту
+
+  // Пагинация
+  int _currentPage = 1;
+  int _totalPages = 1;
 
   // Хранилище фильтров
   RangeValues _currentRating = const RangeValues(0.0, 10.0);
@@ -29,18 +35,33 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _isGenreAndLogic = false;
   List<Map<String, dynamic>> _selectedActors = [];
   bool _isCastAndLogic = false;
-  
-  // НОВОЕ: Хранилище типа контента
   String _currentContentType = 'movie'; 
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _debounce?.cancel();
     super.dispose();
   }
 
-  // --- ТЕКСТОВЫЙ ПОИСК ---
+  // Следим за прокруткой для бесконечного листания
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+      if (!_isLoading && !_isLoadingMore && _currentPage < _totalPages) {
+        _loadNextPage();
+      }
+    }
+  }
+
+  // --- ТЕКСТОВЫЙ ПОИСК (ПЕРВАЯ СТРАНИЦА) ---
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     
@@ -48,6 +69,8 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _movies = [];
         _isFilterMode = false;
+        _currentPage = 1;
+        _totalPages = 1;
       });
       return;
     }
@@ -56,21 +79,24 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _isLoading = true;
         _isFilterMode = false; 
+        _currentPage = 1;
       });
 
-      // Добавлен contentType
+      // При текстовом поиске TMDB возвращает результаты без явного total_pages в простом методе,
+      // поэтому для пагинации текстового поиска заложим базовый лимит страниц
       final results = await _tmdbService.searchMovies(query, contentType: _currentContentType);
       
       if (mounted) {
         setState(() {
           _movies = results;
+          _totalPages = 5; // Ставим разумный лимит для текстовых страниц
           _isLoading = false;
         });
       }
     });
   }
 
-  // --- ПОИСК ПО ФИЛЬТРАМ ---
+  // --- ПОИСК ПО ФИЛЬТРАМ (ПЕРВАЯ СТРАНИЦА) ---
   void _openFilters() async {
     FocusScope.of(context).unfocus(); 
 
@@ -86,7 +112,7 @@ class _SearchScreenState extends State<SearchScreen> {
         initialGenreLogic: _isGenreAndLogic,
         initialCastLogic: _isCastAndLogic,
         initialRuntime: _currentRuntime,
-        initialContentType: _currentContentType, // ИСПРАВЛЕНИЕ ОШИБКИ
+        initialContentType: _currentContentType, 
         showGenres: true,
       ),
     );
@@ -101,11 +127,12 @@ class _SearchScreenState extends State<SearchScreen> {
         _isGenreAndLogic = result['isGenreAndLogic'];
         _selectedActors = result['selectedActors'];
         _isCastAndLogic = result['isCastAndLogic'];
-        _currentContentType = result['contentType']; // Обновляем тип из шторки
+        _currentContentType = result['contentType']; 
         
         _searchController.clear(); 
         _isFilterMode = true; 
         _isLoading = true;
+        _currentPage = 1;
       });
 
       _fetchByFilters();
@@ -113,13 +140,13 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _fetchByFilters() async {
-    // В TMDB /discover/movie работает лучше, если есть хотя бы 1 жанр. 
     int primaryGenre = _currentGenresIds.isNotEmpty 
         ? _currentGenresIds.first 
-        : (_currentContentType == 'movie' ? 28 : 10759); // 28 - Экшен Фильмы, 10759 - Экшен Сериалы
+        : (_currentContentType == 'movie' ? 28 : 10759); 
 
     final data = await _tmdbService.getMoviesByGenre(
       primaryGenre,
+      page: _currentPage,
       minRating: _currentRating.start,
       maxRating: _currentRating.end,
       minYear: _currentYear.start.toInt(),
@@ -128,14 +155,68 @@ class _SearchScreenState extends State<SearchScreen> {
       isCastAndLogic: _isCastAndLogic,
       minRuntime: _currentRuntime.start.toInt(),
       maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
-      contentType: _currentContentType, // Добавлен contentType
+      contentType: _currentContentType, 
     );
 
     if (mounted) {
       setState(() {
         _movies = data['results'] ?? [];
+        _totalPages = data['total_pages'] ?? 1;
         _isLoading = false;
       });
+    }
+  }
+
+  // --- ЗАГРУЗКА СЛЕДУЮЩЕЙ СТРАНИЦЫ (БЕСКОНЕЧНЫЙ СКРОЛЛ) ---
+  Future<void> _loadNextPage() async {
+    setState(() => _isLoadingMore = true);
+    final nextPage = _currentPage + 1;
+
+    List<dynamic> newItems = [];
+
+    if (_isFilterMode) {
+      int primaryGenre = _currentGenresIds.isNotEmpty ? _currentGenresIds.first : 28;
+      final data = await _tmdbService.getMoviesByGenre(
+        primaryGenre,
+        page: nextPage,
+        minRating: _currentRating.start,
+        maxRating: _currentRating.end,
+        minYear: _currentYear.start.toInt(),
+        maxYear: _currentYear.end.toInt(),
+        castIds: _selectedActors.map((a) => a['id'] as int).toList(),
+        isCastAndLogic: _isCastAndLogic,
+        minRuntime: _currentRuntime.start.toInt(),
+        maxRuntime: _currentRuntime.end == 240.0 ? null : _currentRuntime.end.toInt(),
+        contentType: _currentContentType,
+      );
+      newItems = data['results'] ?? [];
+    } else {
+      // Для текста делаем запрос следующей страницы через кастомный вызов Dio (внедряя page)
+      try {
+        final endpoint = _currentContentType == 'movie' ? '/search/movie' : '/search/tv';
+        final dio = _tmdbService.getDioInstance(); // Получим Dio из сервиса
+        final response = await dio.get(
+          endpoint,
+          queryParameters: {
+            'api_key': _tmdbService.apiKey,
+            'language': 'ru-RU',
+            'query': _searchController.text,
+            'page': nextPage,
+          },
+        );
+        final List<dynamic> results = response.data['results'] ?? [];
+        newItems = results.map((item) => _tmdbService.normalizeItemHelper(item, _currentContentType)).toList();
+      } catch (_) {}
+    }
+
+    if (mounted && newItems.isNotEmpty) {
+      setState(() {
+        _movies.addAll(newItems);
+        _currentPage = nextPage;
+        _isLoadingMore = false;
+      });
+    } else {
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -146,7 +227,7 @@ class _SearchScreenState extends State<SearchScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Верхняя панель (Поиск + Кнопка фильтров)
+            // Панель поиска и фильтров
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -191,54 +272,24 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
-            
-            // НОВОЕ: Тумблер Фильмы / Сериалы
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0).copyWith(bottom: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ToggleButtons(
-                      isSelected: [_currentContentType == 'movie', _currentContentType == 'tv'],
-                      onPressed: (index) {
-                        setState(() {
-                          _currentContentType = index == 0 ? 'movie' : 'tv';
-                        });
-                        // Автоматически перезапускаем поиск при переключении
-                        if (_isFilterMode) {
-                          _fetchByFilters();
-                        } else if (_searchController.text.isNotEmpty) {
-                          _onSearchChanged(_searchController.text);
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
-                      selectedColor: const Color(0xFF00E5FF),
-                      color: Colors.white54,
-                      constraints: const BoxConstraints(minHeight: 40),
-                      children: const [
-                        Text('Фильмы', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('Сериалы', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
-            // Если включен режим фильтров — показываем плашку для сброса
             if (_isFilterMode)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16).copyWith(bottom: 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Поиск по фильтрам активен', style: TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold)),
+                    Text(
+                      'Поиск активен: ${_currentContentType == 'tv' ? 'Сериалы' : 'Фильмы'}', 
+                      style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
+                    ),
                     GestureDetector(
                       onTap: () {
                         setState(() {
                           _isFilterMode = false;
                           _movies = [];
+                          _currentPage = 1;
+                          _totalPages = 1;
                         });
                       },
                       child: const Text('Сбросить', style: TextStyle(color: Colors.white54, decoration: TextDecoration.underline)),
@@ -247,7 +298,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
 
-            // Основной контент (Грид с фильмами или заглушка)
+            // Вывод элементов
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)))
@@ -281,6 +332,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildMoviesGrid() {
     return GridView.builder(
+      controller: _scrollController, // Подключаем контроллер листания
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -289,15 +341,18 @@ class _SearchScreenState extends State<SearchScreen> {
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),
-      itemCount: _movies.length,
+      itemCount: _movies.length + (_isLoadingMore ? 2 : 0), // Добавляем места под лоадеры внизу
       itemBuilder: (context, index) {
+        if (index >= _movies.length) {
+          return const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)));
+        }
+        
         final movie = _movies[index];
         return GestureDetector(
           onTap: () async {
             FocusScope.of(context).unfocus();
             showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))));
             
-            // Добавлен contentType
             final fullData = await _tmdbService.getMovieDetails(movie['id'], contentType: _currentContentType);
             
             if (mounted) Navigator.pop(context);

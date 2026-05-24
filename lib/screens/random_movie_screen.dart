@@ -91,7 +91,7 @@ class _RandomMovieScreenState extends State<RandomMovieScreen> {
     );
 
     if (movie != null && movie['imdb_id'] != null) {
-      _fetchKinopoiskRating(movie['imdb_id']);
+      _fetchKinopoiskRating(movie['title'], movie['release_date']);
     }
 
     setState(() {
@@ -106,10 +106,19 @@ class _RandomMovieScreenState extends State<RandomMovieScreen> {
     }
   }
 
-  Future<void> _fetchKinopoiskRating(String imdbId) async {
-    final kpData = await _tmdbService.getKinopoiskData(imdbId);
+Future<void> _fetchKinopoiskRating(String title, String? releaseDate) async {
+    // Вытаскиваем чистый год (например, "2024" из строки "2024-11-05")
+    final String? releaseYear = releaseDate != null && releaseDate.isNotEmpty
+        ? releaseDate.split('-')[0]
+        : null;
+
+    // Передаем в TMDBService название и год релиза
+    final kpData = await _tmdbService.getKinopoiskData(title, releaseYear);
+    
     if (kpData != null && mounted) {
-      setState(() => _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-');
+      setState(() {
+        _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-';
+      });
     }
   }
 

@@ -26,7 +26,7 @@ class _MovieDetailsScreenState extends State<MovieDetailsScreen> {
   void initState() {
     super.initState();
     _sheetController.addListener(_onSheetScroll);
-    _fetchKinopoiskRating();
+    _loadKinopoiskRating();
   }
 
   @override
@@ -36,13 +36,20 @@ class _MovieDetailsScreenState extends State<MovieDetailsScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchKinopoiskRating() async {
-    final imdbId = widget.movie['imdb_id']; 
-    if (imdbId != null) {
-      final kpData = await _tmdbService.getKinopoiskData(imdbId);
-      if (kpData != null && mounted) {
-        setState(() => _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-');
-      }
+Future<void> _loadKinopoiskRating() async {
+    // Вытаскиваем год релиза из переданного в виджет объекта movie
+    final String? releaseYear = widget.movie['release_date']?.split('-')[0];
+
+    // ИСПРАВЛЕНО: Запрашиваем данные строго по названию и году
+    final kpData = await _tmdbService.getKinopoiskData(
+      widget.movie['title'],
+      releaseYear,
+    );
+
+    if (kpData != null && mounted) {
+      setState(() {
+        _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-';
+      });
     }
   }
 

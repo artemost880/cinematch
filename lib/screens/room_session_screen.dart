@@ -116,16 +116,24 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
     
     final fullData = await _tmdbService.getMovieDetails(lightMovie['id'], contentType: contentType);
     
-    if (fullData != null && mounted && lightMovie['id'] == _deck[_currentIndex]['id']) {
-      setState(() => _currentFullMovie = fullData);
-      
-      if (fullData['imdb_id'] != null) {
-        final kpData = await _tmdbService.getKinopoiskData(fullData['imdb_id']);
-        if (kpData != null && mounted && lightMovie['id'] == _deck[_currentIndex]['id']) {
-          setState(() => _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-');
-        }
-      }
-    }
+      if (fullData != null && mounted && lightMovie['id'] == _deck[_currentIndex]['id']) {
+            setState(() => _currentFullMovie = fullData);
+            
+            // Вытаскиваем чистый год релиза (например, "2024" из строки "2024-11-05")
+            final String? releaseYear = fullData['release_date']?.split('-')[0];
+
+            // ИСПРАВЛЕНО: Передаем ровно 2 аргумента: Название и Год
+            final kpData = await _tmdbService.getKinopoiskData(
+              fullData['title'],
+              releaseYear,
+            );
+
+            if (kpData != null && mounted && lightMovie['id'] == _deck[_currentIndex]['id']) {
+              setState(() {
+                _kpRating = kpData['ratingKinopoisk']?.toString() ?? '-.-';
+              });
+            }
+          }
   }
 
   // Слушаем закрытие комнаты

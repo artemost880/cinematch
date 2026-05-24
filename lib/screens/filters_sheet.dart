@@ -10,7 +10,7 @@ class FiltersSheet extends StatefulWidget {
   final bool initialGenreLogic;
   final bool initialCastLogic;
   final RangeValues? initialRuntime;
-  final String initialContentType; // 'movie' или 'tv'
+  final String initialContentType; 
   final bool showGenres; 
 
   const FiltersSheet({
@@ -33,7 +33,6 @@ class FiltersSheet extends StatefulWidget {
 class _FiltersSheetState extends State<FiltersSheet> {
   final TMDBService _tmdbService = TMDBService();
 
-  // Основные фильтры
   late RangeValues _rating;
   late RangeValues _year;
   late RangeValues _runtime; 
@@ -41,15 +40,13 @@ class _FiltersSheetState extends State<FiltersSheet> {
   late bool _isGenreAndLogic;
   late List<Map<String, dynamic>> _selectedActors;
   late bool _isCastAndLogic;
-  late String _contentType; // Состояние для тумблера: фильмы / сериалы
+  late String _contentType; 
 
-  // Поиск актеров
   final TextEditingController _actorSearchController = TextEditingController();
   List<dynamic> _actorSearchResults = [];
   bool _isSearchingActor = false;
   Timer? _debounce;
 
-  // Базовый справочник жанров для фильмов
   final Map<String, int> _genresMap = {
     'Экшен': 28, 'Приключения': 12, 'Анимация': 16, 'Комедия': 35,
     'Криминал': 80, 'Документальный': 99, 'Драма': 18, 'Семейный': 10751,
@@ -78,44 +75,28 @@ class _FiltersSheetState extends State<FiltersSheet> {
     super.dispose();
   }
 
-  // Умный маппинг жанров TMDB (у фильмов и сериалов разные ID)
   int _getGenreId(String name, String type) {
     if (type == 'movie') {
       return _genresMap[name] ?? 28;
     } else {
       switch (name) {
-        case 'Экшен':
-        case 'Приключения':
-          return 10759; // Action & Adventure для сериалов
-        case 'Анимация':
-          return 16;
-        case 'Комедия':
-          return 35;
-        case 'Криминал':
-          return 80;
-        case 'Документальный':
-          return 99;
-        case 'Драма':
-          return 18;
-        case 'Семейный':
-          return 10751;
-        case 'Фантастика':
-        case 'Фэнтези':
-          return 10765; // Sci-Fi & Fantasy для сериалов
-        case 'Детектив':
-          return 9648;
-        case 'Ужасы':
-          return 27;
-        case 'Военный':
-        case 'История':
-          return 10768; // War & Politics для сериалов
-        default:
-          return _genresMap[name] ?? 35;
+        case 'Экшен': case 'Приключения': return 10759;
+        case 'Анимация': return 16;
+        case 'Комедия': return 35;
+        case 'Криминал': return 80;
+        case 'Документальный': return 99;
+        case 'Драма': return 18;
+        case 'Семейный': return 10751;
+        case 'Фантастика': case 'Фэнтези': return 10765;
+        case 'Детектив': return 9648;
+        case 'Ужасы': return 27;
+        case 'Военный': case 'История': return 10768;
+        default: return _genresMap[name] ?? 35;
       }
     }
   }
 
-void _onActorSearchChanged(String query) {
+  void _onActorSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     if (query.length < 3) {
       setState(() { _actorSearchResults = []; _isSearchingActor = false; });
@@ -126,10 +107,7 @@ void _onActorSearchChanged(String query) {
     _debounce = Timer(const Duration(milliseconds: 500), () async {
       final results = await _tmdbService.searchPerson(query);
       if (mounted) {
-        setState(() { 
-          _actorSearchResults = results; // ИСПРАВЛЕНО: убрали случайный бэкслеш
-          _isSearchingActor = false; 
-        });
+        setState(() { _actorSearchResults = results; _isSearchingActor = false; });
       }
     });
   }
@@ -150,20 +128,87 @@ void _onActorSearchChanged(String query) {
     );
   }
 
+  // --- КРАСИВЫЙ СКОЛЬЗЯЩИЙ СВИЧЕР (ИСПРАВЛЕНИЕ ПУНКТА 1 И 3) ---
+  Widget _buildSlidingSegmentedControl() {
+    bool isMovie = _contentType == 'movie';
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black38,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOutCubic,
+            alignment: isMovie ? Alignment.centerLeft : Alignment.centerRight,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E5FF),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(color: const Color(0xFF00E5FF).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _handleContentTypeChange('movie'),
+                  child: Center(
+                    child: Text(
+                      'Фильмы',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isMovie ? Colors.black : Colors.white60),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _handleContentTypeChange('tv'),
+                  child: Center(
+                    child: Text(
+                      'Сериалы',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: !isMovie ? Colors.black : Colors.white60),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Сброс несовместимых фильтров при переключении
+  void _handleContentTypeChange(String type) {
+    if (_contentType == type) return;
+    setState(() {
+      _contentType = type;
+      _selectedGenresText.clear(); // Сбрасываем жанры
+      _selectedActors.clear();     // Сбрасываем актеров
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
 
     return Container(
       constraints: BoxConstraints(maxHeight: screenHeight * 0.9),
-      padding: EdgeInsets.only(
-        left: 24, right: 24, top: 24, 
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      decoration: const BoxDecoration(color: Color(0xFF1E1E1E), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,30 +228,9 @@ void _onActorSearchChanged(String query) {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- ТУМБЛЕР ВЫБОРА КОНТЕНТА ---
                   const Text('Тип контента', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ToggleButtons(
-                          isSelected: [_contentType == 'movie', _contentType == 'tv'],
-                          onPressed: (index) => setState(() {
-                            _contentType = index == 0 ? 'movie' : 'tv';
-                          }),
-                          borderRadius: BorderRadius.circular(12),
-                          fillColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
-                          selectedColor: const Color(0xFF00E5FF),
-                          color: Colors.white54,
-                          constraints: const BoxConstraints(minHeight: 45),
-                          children: const [
-                            Text('Фильмы', style: TextStyle(fontWeight: FontWeight.bold)),
-                            Text('Сериалы', style: TextStyle(fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  _buildSlidingSegmentedControl(),
                   const SizedBox(height: 24),
 
                   Row(
@@ -237,7 +261,6 @@ void _onActorSearchChanged(String query) {
                   ),
                   const SizedBox(height: 24),
 
-                  // Длительность имеет смысл выводить только для фильмов
                   if (_contentType == 'movie') ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -269,15 +292,9 @@ void _onActorSearchChanged(String query) {
                         final isSelected = _selectedGenresText.contains(genre);
                         return FilterChip(
                           label: Text(genre, style: TextStyle(color: isSelected ? Colors.black : Colors.white70)),
-                          selected: isSelected,
-                          selectedColor: const Color(0xFF00E5FF),
-                          backgroundColor: Colors.black45,
-                          checkmarkColor: Colors.black,
-                          onSelected: (selected) {
-                            setState(() {
-                              selected ? _selectedGenresText.add(genre) : _selectedGenresText.remove(genre);
-                            });
-                          },
+                          selected: isSelected, selectedColor: const Color(0xFF00E5FF),
+                          backgroundColor: Colors.black45, checkmarkColor: Colors.black,
+                          onSelected: (selected) => setState(() => selected ? _selectedGenresText.add(genre) : _selectedGenresText.remove(genre)),
                         );
                       }).toList(),
                     ),
@@ -295,14 +312,10 @@ void _onActorSearchChanged(String query) {
                   const SizedBox(height: 12),
                   
                   TextField(
-                    controller: _actorSearchController,
-                    onChanged: _onActorSearchChanged,
+                    controller: _actorSearchController, onChanged: _onActorSearchChanged,
                     decoration: InputDecoration(
-                      hintText: 'Введите имя (напр. Том Харди)',
-                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-                      prefixIcon: const Icon(Icons.person_search, color: Colors.white54),
-                      filled: true,
-                      fillColor: Colors.black45,
+                      hintText: 'Введите имя', hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                      prefixIcon: const Icon(Icons.person_search, color: Colors.white54), filled: true, fillColor: Colors.black45,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       suffixIcon: _isSearchingActor ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2)) : null,
                     ),
@@ -310,30 +323,16 @@ void _onActorSearchChanged(String query) {
                   
                   if (_actorSearchResults.isNotEmpty)
                     Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
+                      margin: const EdgeInsets.only(top: 8), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white10)),
                       constraints: const BoxConstraints(maxHeight: 200),
                       child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _actorSearchResults.length,
+                        shrinkWrap: true, itemCount: _actorSearchResults.length,
                         itemBuilder: (context, index) {
                           final person = _actorSearchResults[index];
                           return ListTile(
-                            leading: ClipOval(
-                              child: person['profile_path'] != null 
-                                  ? Image.network(_tmdbService.getImageUrl(person['profile_path']), width: 40, height: 40, fit: BoxFit.cover)
-                                  : Container(width: 40, height: 40, color: Colors.grey[800], child: const Icon(Icons.person, color: Colors.white54)),
-                            ),
+                            leading: ClipOval(child: person['profile_path'] != null ? Image.network(_tmdbService.getImageUrl(person['profile_path']), width: 40, height: 40, fit: BoxFit.cover) : Container(width: 40, height: 40, color: Colors.grey[800], child: const Icon(Icons.person, color: Colors.white54))),
                             title: Text(person['name'] ?? ''),
-                            onTap: () {
-                              setState(() {
-                                if (!_selectedActors.any((a) => a['id'] == person['id'])) {
-                                  _selectedActors.add(person);
-                                }
-                                _actorSearchController.clear();
-                                _actorSearchResults.clear();
-                              });
-                            },
+                            onTap: () => setState(() { if (!_selectedActors.any((a) => a['id'] == person['id'])) _selectedActors.add(person); _actorSearchController.clear(); _actorSearchResults.clear(); }),
                           );
                         },
                       ),
@@ -346,16 +345,9 @@ void _onActorSearchChanged(String query) {
                       children: _selectedActors.map((actor) {
                         return InputChip(
                           label: Text(actor['name']),
-                          avatar: ClipOval(
-                            child: actor['profile_path'] != null
-                                ? Image.network(_tmdbService.getImageUrl(actor['profile_path']), fit: BoxFit.cover)
-                                : const Icon(Icons.person, size: 18),
-                          ),
-                          backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                          deleteIconColor: Colors.amber,
-                          onDeleted: () {
-                            setState(() => _selectedActors.removeWhere((a) => a['id'] == actor['id']));
-                          },
+                          avatar: ClipOval(child: actor['profile_path'] != null ? Image.network(_tmdbService.getImageUrl(actor['profile_path']), fit: BoxFit.cover) : const Icon(Icons.person, size: 18)),
+                          backgroundColor: Colors.amber.withValues(alpha: 0.2), deleteIconColor: Colors.amber,
+                          onDeleted: () => setState(() => _selectedActors.removeWhere((a) => a['id'] == actor['id'])),
                         );
                       }).toList(),
                     ),
@@ -371,27 +363,16 @@ void _onActorSearchChanged(String query) {
             child: ElevatedButton(
               onPressed: () {
                 List<int> genreIds = _selectedGenresText.map((name) => _getGenreId(name, _contentType)).toList();
-                
                 Navigator.pop(context, {
-                  'rating': _rating,
-                  'year': _year,
-                  'runtime': _runtime,
-                  'genresText': _selectedGenresText,
-                  'genresIds': genreIds,
-                  'isGenreAndLogic': _isGenreAndLogic,
-                  'selectedActors': _selectedActors,
-                  'castIds': _selectedActors.map((a) => a['id'] as int).toList(),
-                  'isCastAndLogic': _isCastAndLogic,
-                  'contentType': _contentType,
-                  'minRuntime': _runtime.start.toInt(),
+                  'rating': _rating, 'year': _year, 'runtime': _runtime,
+                  'genresText': _selectedGenresText, 'genresIds': genreIds,
+                  'isGenreAndLogic': _isGenreAndLogic, 'selectedActors': _selectedActors,
+                  'castIds': _selectedActors.map((a) => a['id'] as int).toList(), 'isCastAndLogic': _isCastAndLogic,
+                  'contentType': _contentType, 'minRuntime': _runtime.start.toInt(),
                   'maxRuntime': _runtime.end == 240.0 ? null : _runtime.end.toInt(),
                 });
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E5FF),
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E5FF), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               child: const Text('ПРИМЕНИТЬ ФИЛЬТРЫ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
             ),
           ),

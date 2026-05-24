@@ -4,9 +4,16 @@ import 'package:url_launcher/url_launcher.dart';
 
 class TMDBService {
   final Dio _dio = Dio(BaseOptions(baseUrl: 'https://api.themoviedb.org/3'));
-  final String apiKey = 'YOUR_TMDB_API_KEY'; // Подставьте ваш API-ключ TMDB
+  final String apiKey = '518345addd8c574e41183682be0a1072'; 
 
-  // Вспомогательный метод для склейки полей фильмов и сериалов (Нормализация данных)
+  // Публичный доступ к инстансу для пагинации текстового поиска
+  Dio getDioInstance() => _dio;
+
+  // Публичный хелпер нормализации
+  Map<String, dynamic> normalizeItemHelper(Map<String, dynamic> item, String contentType) {
+    return _normalizeItem(item, contentType);
+  }
+
   Map<String, dynamic> _normalizeItem(Map<String, dynamic> item, String contentType) {
     if (contentType == 'tv') {
       item['title'] = item['name'] ?? item['original_name'] ?? 'Без названия';
@@ -18,31 +25,38 @@ class TMDBService {
     return item;
   }
 
-  // Получение полного URL для изображений (постеры, кадры, аватарки)
   String getImageUrl(String? path, {String size = 'w500'}) {
     if (path == null || path.isEmpty) return '';
     return 'https://image.tmdb.org/t/p/$size$path';
   }
 
-  // Получение детальной информации о фильме или сериале
   Future<Map<String, dynamic>?> getMovieDetails(int id, {String contentType = 'movie'}) async {
     try {
       final endpoint = contentType == 'movie' ? '/movie/$id' : '/tv/$id';
+      final appendResponse = contentType == 'movie' 
+          ? 'videos,images,credits,watch/providers' 
+          : 'videos,images,credits,watch/providers,external_ids';
+
       final response = await _dio.get(
         endpoint,
         queryParameters: {
           'api_key': apiKey,
           'language': 'ru-RU',
-          'append_to_response': 'videos,images,credits,watch/providers',
+          'append_to_response': appendResponse,
         },
       );
-      return _normalizeItem(response.data, contentType);
+
+      final data = response.data;
+      if (contentType == 'tv' && data['external_ids'] != null) {
+        data['imdb_id'] = data['external_ids']['imdb_id'];
+      }
+
+      return _normalizeItem(data, contentType);
     } catch (e) {
       return null;
     }
   }
 
-  // Текстовый поиск фильмов и сериалов (убирает ошибки в Делегате и Экране Поиска)
   Future<List<dynamic>> searchMovies(String query, {String contentType = 'movie'}) async {
     try {
       final endpoint = contentType == 'movie' ? '/search/movie' : '/search/tv';
@@ -62,7 +76,6 @@ class TMDBService {
     }
   }
 
-  // Поиск актеров по имени (используется для автокомплита в шторке фильтров)
   Future<List<dynamic>> searchPerson(String query) async {
     try {
       final response = await _dio.get(
@@ -80,7 +93,6 @@ class TMDBService {
     }
   }
 
-  // Получение подборок контента по жанру и расширенным фильтрам (с пагинацией)
   Future<Map<String, dynamic>> getMoviesByGenre(
     int genreId, {
     int page = 1,
@@ -92,7 +104,7 @@ class TMDBService {
     bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
-    String contentType = 'movie', // 'movie' или 'tv'
+    String contentType = 'movie',
   }) async {
     try {
       final endpoint = contentType == 'movie' ? '/discover/movie' : '/discover/tv';
@@ -109,22 +121,23 @@ class TMDBService {
         '$dateMaxKey': '$maxYear-12-31',
       };
 
-      // Передаем ID жанра
       params['with_genres'] = genreId.toString();
 
-      // Хронометраж (поддерживается базовым API TMDB только для фильмов)
+      if (contentType == 'tv') {
+        params['vote_count.gte'] = 40; 
+      }
+
       if (contentType == 'movie') {
+        params['vote_count.gte'] = 40; 
         if (minRuntime != null) params['with_runtime.gte'] = minRuntime;
         if (maxRuntime != null) params['with_runtime.lte'] = maxRuntime;
       }
 
-      // Фильтр по актерскому составу
       if (castIds.isNotEmpty) {
         params['with_cast'] = castIds.join(isCastAndLogic ? ',' : '|');
       }
 
       final response = await _dio.get(endpoint, queryParameters: params);
-      
       final List<dynamic> results = response.data['results'] ?? [];
       final normalizedResults = results.map((item) => _normalizeItem(item, contentType)).toList();
 
@@ -137,7 +150,6 @@ class TMDBService {
     }
   }
 
-  // Рандомайзер (вытаскивает случайный фильм/сериал по заданным фильтрам)
   Future<Map<String, dynamic>?> getRandomMovie({
     double minRating = 0.0,
     double maxRating = 10.0,
@@ -149,7 +161,7 @@ class TMDBService {
     bool isCastAndLogic = false,
     int? minRuntime,
     int? maxRuntime,
-    String contentType = 'movie', // 'movie' или 'tv'
+    String contentType = 'movie',
   }) async {
     try {
       final endpoint = contentType == 'movie' ? '/discover/movie' : '/discover/tv';
@@ -165,6 +177,12 @@ class TMDBService {
         '$dateMaxKey': '$maxYear-12-31',
       };
 
+      if (contentType == 'tv') {
+        params['vote_count.gte'] = 80; 
+      } else {
+        params['vote_count.gte'] = 100; 
+      }
+
       if (genreIds.isNotEmpty) {
         params['with_genres'] = genreIds.join(isGenreAndLogic ? ',' : '|');
       }
@@ -176,49 +194,66 @@ class TMDBService {
         if (maxRuntime != null) params['with_runtime.lte'] = maxRuntime;
       }
 
-      // Пингуем API, чтобы узнать общее число страниц по заданным фильтрам
       final firstResp = await _dio.get(endpoint, queryParameters: params);
       final int totalPages = firstResp.data['total_pages'] ?? 1;
-      
-      // TMDB имеет жесткий лимит в 500 страниц на discover-запросы
       final int maxPage = totalPages > 500 ? 500 : totalPages;
       final int targetPage = Random().nextInt(maxPage) + 1;
 
-      // Делаем финальный запрос на случайную страницу
       params['page'] = targetPage;
       final finalResp = await _dio.get(endpoint, queryParameters: params);
       final List<dynamic> results = finalResp.data['results'] ?? [];
 
       if (results.isEmpty) return null;
-
-      // Берем случайный элемент из полученной страницы
       final randomItem = results[Random().nextInt(results.length)];
       
-      // Запрашиваем полные детали (актеры, кадры, трейлер) для карточки
       return await getMovieDetails(randomItem['id'], contentType: contentType);
     } catch (e) {
       return null;
     }
   }
 
-  // Получение рейтинга Кинопоиска по IMDb ID
-  Future<Map<String, dynamic>?> getKinopoiskData(String imdbId) async {
+// Официальный поиск рейтингов Кинопоиска через ключевые слова по Swagger
+  Future<Map<String, dynamic>?> getKinopoiskData(String? title, String? year) async {
+    if (title == null || title.isEmpty) return null;
+
     try {
-      final response = await _dio.get(
-        'https://kinopoiskapiunofficial.tech/api/v2.2/films/external_id/$imdbId', 
-        options: Options(headers: {'X-API-KEY': 'YOUR_KINOPOISK_API_KEY'}) // Вставьте ваш токен Кинопоиска
+      // 1. Ищем фильм/сериал по названию через официальный эндпоинт ключевых слов
+      final searchResponse = await _dio.get(
+        'https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword',
+        queryParameters: {
+          'keyword': title,
+          'page': 1,
+        },
+        options: Options(headers: {'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b'}) // Твой рабочий ключ Кинопоиска
       );
-      return response.data;
+
+      final List<dynamic> films = searchResponse.data['films'] ?? [];
+      if (films.isEmpty) return null;
+
+      // 2. Фильтруем результаты, сопоставляя год выпуска из TMDB
+      final exactMatch = films.firstWhere(
+        (f) => year != null && f['year']?.toString() == year,
+        orElse: () => films.first, // Если точного года нет, берем самое релевантное первое совпадение
+      );
+
+      final int? kinopoiskId = exactMatch['filmId'] as int?;
+      if (kinopoiskId == null) return null;
+
+      // 3. Запрашиваем официальную карточку по kinopoiskId, чтобы вытащить рейтинг
+      final mainResponse = await _dio.get(
+        'https://kinopoiskapiunofficial.tech/api/v2.2/films/$kinopoiskId',
+        options: Options(headers: {'X-API-KEY': 'c3348a19-eea2-4828-942e-581fce2e1a6b'})
+      );
+
+      return mainResponse.data; // Возвращает полную карточку, где точно есть 'ratingKinopoisk'
     } catch (e) {
+      // Ловим любые сетевые ошибки, чтобы приложение не падало
       return null;
     }
   }
 
-  // Запуск трейлера на YouTube через внешнее приложение или браузер
   Future<void> launchTrailer(List<dynamic>? videos) async {
     if (videos == null || videos.isEmpty) return;
-    
-    // Ищем официальный трейлер на YouTube
     final trailer = videos.firstWhere(
       (v) => v['site'] == 'YouTube' && v['type'] == 'Trailer',
       orElse: () => videos.firstWhere((v) => v['site'] == 'YouTube', orElse: () => null),
@@ -227,7 +262,6 @@ class TMDBService {
     if (trailer != null && trailer['key'] != null) {
       final Uri url = Uri.parse('https://www.youtube.com/watch?v=${trailer['key']}');
       final Uri appUrl = Uri.parse('youtube://www.youtube.com/watch?v=${trailer['key']}');
-      
       if (await canLaunchUrl(appUrl)) {
         await launchUrl(appUrl, mode: LaunchMode.externalApplication);
       } else if (await canLaunchUrl(url)) {
