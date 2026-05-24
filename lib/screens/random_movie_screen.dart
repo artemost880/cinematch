@@ -148,6 +148,7 @@ class _RandomMovieScreenState extends State<RandomMovieScreen> {
                   initialRating: _currentRating, 
                   initialYear: _currentYear, 
                   initialGenres: _currentGenresText,
+                  initialGenresQuery: _currentGenresQuery,
                   initialActors: _currentActors,
                   initialGenreLogic: _isGenreAndLogic,
                   initialCastLogic: _isCastAndLogic,

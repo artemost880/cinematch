@@ -109,7 +109,8 @@ class _GenreMoviesScreenState extends State<GenreMoviesScreen> {
         return FiltersSheet(
           initialRating: _currentRating,
           initialYear: _currentYear,
-          initialGenres: const {}, // Пустой сет
+          initialGenres: const {},
+          initialGenresQuery: '',
           showGenres: false,       // СКРЫВАЕМ БЛОК ЖАНРОВ
           initialActors: _selectedActors, 
           initialGenreLogic: false, 

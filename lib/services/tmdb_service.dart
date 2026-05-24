@@ -93,6 +93,39 @@ class TMDBService {
     }
   }
 
+  // Вспомогательный метод для разделения положительных и отрицательных фильтров жанров
+  void _parseAndSetGenreParams(Map<String, dynamic> params, String genreString) {
+    final List<String> positiveGenres = [];
+    final List<String> negativeGenres = [];
+    
+    // Определяем разделитель (запятая = AND, трубка = OR)
+    String separator = ',';
+    if (genreString.contains('|')) {
+      separator = '|';
+    }
+    
+    // Разделяем на положительные и отрицательные ID
+    final parts = genreString.split(RegExp(r'[,|]'));
+    for (final part in parts) {
+      final trimmed = part.trim();
+      if (trimmed.isNotEmpty) {
+        if (trimmed.startsWith('!')) {
+          negativeGenres.add(trimmed.substring(1)); // Убираем "!" для without_genres
+        } else {
+          positiveGenres.add(trimmed);
+        }
+      }
+    }
+    
+    // Устанавливаем параметры TMDB API, сохраняя разделитель (логику)
+    if (positiveGenres.isNotEmpty) {
+      params['with_genres'] = positiveGenres.join(separator);
+    }
+    if (negativeGenres.isNotEmpty) {
+      params['without_genres'] = negativeGenres.join(','); // Отрицательные всегда через запятую (AND логика)
+    }
+  }
+
   Future<Map<String, dynamic>> getMoviesByGenre(
     dynamic genreId, {
     int page = 1,
@@ -122,7 +155,7 @@ class TMDBService {
       };
 
       if (genreId != null && genreId.toString().isNotEmpty) {
-        params['with_genres'] = genreId.toString();
+        _parseAndSetGenreParams(params, genreId.toString());
       }
 
       if (contentType == 'tv') {
@@ -186,9 +219,9 @@ class TMDBService {
       }
 
       if (genreIds is String && genreIds.isNotEmpty) {
-        params['with_genres'] = genreIds;
+        _parseAndSetGenreParams(params, genreIds);
       } else if (genreIds is List && genreIds.isNotEmpty) {
-        params['with_genres'] = genreIds.join(isGenreAndLogic ? ',' : '|');
+        _parseAndSetGenreParams(params, genreIds.join(isGenreAndLogic ? ',' : '|'));
       }
 
       if (castIds.isNotEmpty) {

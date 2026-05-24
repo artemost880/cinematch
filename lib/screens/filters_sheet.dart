@@ -6,6 +6,7 @@ class FiltersSheet extends StatefulWidget {
   final RangeValues initialRating;
   final RangeValues initialYear;
   final Set<String> initialGenres; // Для обратной совместимости передаем как включенные
+  final String initialGenresQuery; // Полная query-строка с позитивными и негативными жанрами
   final List<Map<String, dynamic>>? initialActors;
   final bool initialGenreLogic;
   final bool initialCastLogic;
@@ -18,6 +19,7 @@ class FiltersSheet extends StatefulWidget {
     required this.initialRating,
     required this.initialYear,
     required this.initialGenres,
+    this.initialGenresQuery = '',
     this.initialActors,
     this.initialGenreLogic = false,
     this.initialCastLogic = false,
@@ -69,9 +71,14 @@ class _FiltersSheetState extends State<FiltersSheet> {
     _runtime = widget.initialRuntime ?? const RangeValues(40.0, 240.0);
     _contentType = widget.initialContentType;
 
-    // Инициализируем стартовые жанры как "включенные" (состояние 1)
-    for (var genre in widget.initialGenres) {
-      _genreStates[genre] = 1;
+    // Парсим полную query-строку для восстановления жанров (позитивные и негативные)
+    if (widget.initialGenresQuery.isNotEmpty) {
+      _parseGenresQuery(widget.initialGenresQuery);
+    } else {
+      // Fallback на старый формат (только позитивные жанры) для обратной совместимости
+      for (var genre in widget.initialGenres) {
+        _genreStates[genre] = 1;
+      }
     }
   }
 
@@ -101,6 +108,61 @@ class _FiltersSheetState extends State<FiltersSheet> {
         default: return _genresMap[name] ?? 35;
       }
     }
+  }
+
+  // Парсим query-строку (например "28|35,!16") и восстанавливаем состояния жанров
+  void _parseGenresQuery(String genreString) {
+    _genreStates.clear();
+    
+    // Разделяем по запятым и трубкам
+    final parts = genreString.split(RegExp(r'[,|]'));
+    for (final part in parts) {
+      final trimmed = part.trim();
+      if (trimmed.isNotEmpty) {
+        int state = 1; // По умолчанию положительный
+        String idStr = trimmed;
+        
+        if (trimmed.startsWith('!')) {
+          state = -1; // Отрицательный
+          idStr = trimmed.substring(1);
+        }
+        
+        // Преобразуем ID обратно в название жанра с учетом текущего типа контента
+        final genreName = _getGenreNameById(int.tryParse(idStr) ?? 0, _contentType);
+        if (genreName.isNotEmpty) {
+          _genreStates[genreName] = state;
+        }
+      }
+    }
+  }
+
+  // Получаем название жанра по его ID (обратное преобразование) с учетом типа контента
+  String _getGenreNameById(int id, String contentType) {
+    // Сначала ищем в базовой карте
+    for (final entry in _genresMap.entries) {
+      if (entry.value == id) {
+        return entry.key;
+      }
+    }
+    
+    // Если не нашли, проверяем специфические ID для TV
+    if (contentType == 'tv') {
+      switch (id) {
+        case 10759: return 'Экшен'; // Приключения для TV
+        case 16: return 'Анимация';
+        case 35: return 'Комедия';
+        case 80: return 'Криминал';
+        case 99: return 'Документальный';
+        case 18: return 'Драма';
+        case 10751: return 'Семейный';
+        case 10765: return 'Фантастика'; // Для TV это может быть Фэнтези
+        case 9648: return 'Детектив';
+        case 27: return 'Ужасы';
+        case 10768: return 'История'; // Военный / История для TV
+      }
+    }
+    
+    return '';
   }
 
   void _onActorSearchChanged(String query) {

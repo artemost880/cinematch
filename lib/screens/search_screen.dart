@@ -106,6 +106,7 @@ class _SearchScreenState extends State<SearchScreen> {
         initialRating: _currentRating,
         initialYear: _currentYear,
         initialGenres: _currentGenresText,
+        initialGenresQuery: _currentGenresQuery,
         initialActors: _selectedActors,
         initialGenreLogic: _isGenreAndLogic,
         initialCastLogic: _isCastAndLogic,

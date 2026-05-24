@@ -38,7 +38,9 @@ class _RoomWaitingScreenState extends State<RoomWaitingScreen> {
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (context) => FiltersSheet(
         initialRating: _currentRating, initialYear: _currentYear,
-        initialGenres: _currentGenresText, showGenres: true,
+        initialGenres: _currentGenresText, 
+        initialGenresQuery: _currentGenresQuery,
+        showGenres: true,
         initialActors: _selectedActors,
         initialGenreLogic: _isGenreAndLogic,
         initialCastLogic: _isCastAndLogic,
