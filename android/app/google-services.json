@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "860267795273",
+    "project_id": "filmov-net",
+    "storage_bucket": "filmov-net.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:860267795273:android:29d96f128737bb60064098",
+        "android_client_info": {
+          "package_name": "com.example.cinematch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMcCA0ams_-HyeFidTyKBllwi63SIe8ns"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
