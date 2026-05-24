@@ -7,6 +7,7 @@ import '../services/tmdb_service.dart';
 import '../services/room_service.dart';
 import 'movie_details_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'trailer_player_screen.dart';
 
 class RoomSessionScreen extends StatefulWidget {
   final String roomCode;
@@ -414,7 +415,31 @@ class _RoomSessionScreenState extends State<RoomSessionScreen> with TickerProvid
 
   Widget _sourceBtn(String l, VoidCallback o, Color c) => OutlinedButton(onPressed: o, style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: BorderSide(color: c), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(l));
 
-  Widget _buildTrailerButton(Map<String, dynamic> movie) => Padding(padding: const EdgeInsets.only(bottom: 24), child: SizedBox(width: double.infinity, height: 50, child: ElevatedButton.icon(onPressed: () => _tmdbService.launchTrailer(movie['videos']['results']), style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), icon: const Icon(Icons.play_arrow), label: const Text('СМОТРЕТЬ ТРЕЙЛЕР'))));
+Widget _buildTrailerButton(Map m) => Padding(
+    padding: const EdgeInsets.only(bottom: 24), 
+    child: SizedBox(
+      width: double.infinity, height: 50, 
+      child: ElevatedButton.icon(
+        onPressed: () {
+          // Получаем ключ
+          final key = _tmdbService.getTrailerKey(m['videos']?['results']);
+          if (key != null) {
+            // Открываем наш внутренний плеер
+            Navigator.push(context, MaterialPageRoute(
+              builder: (context) => TrailerPlayerScreen(youtubeKey: key)
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Трейлер не найден'))
+            );
+          }
+        }, 
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), 
+        icon: const Icon(Icons.play_arrow), 
+        label: const Text('СМОТРЕТЬ ТРЕЙЛЕР')
+      )
+    )
+  );
 
   Widget _buildActorsList(Map<String, dynamic> movie) => SizedBox(height: 120, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: _getActors(movie).length, itemBuilder: (context, i) => Container(width: 80, margin: const EdgeInsets.only(right: 12), child: Column(children: [ClipOval(child: _getActors(movie)[i]['profile_path'] != null ? Image.network(_tmdbService.getImageUrl(_getActors(movie)[i]['profile_path']), width: 65, height: 65, fit: BoxFit.cover) : Container(width: 65, height: 65, color: Colors.white10, child: const Icon(Icons.person))), const SizedBox(height: 8), Text(_getActors(movie)[i]['name'] ?? '', maxLines: 2, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10))]))));
 

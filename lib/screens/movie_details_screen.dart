@@ -4,6 +4,7 @@ import '../services/tmdb_service.dart';
 import '../services/database_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'trailer_player_screen.dart';
 
 class MovieDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> movie;
@@ -213,7 +214,7 @@ Future<void> _loadKinopoiskRating() async {
                   _buildSection('Поиск в сети', _buildFreeSearchRow()),
 
                   // 7. Смотреть трейлер
-                  if (_hasTrailer()) _buildTrailerButton(),
+                  if (_hasTrailer()) _buildTrailerButton(widget.movie),
 
                   // 8. Описание
                   _buildSection('Описание', Text(widget.movie['overview'] ?? 'Описание отсутствует.', style: const TextStyle(fontSize: 15, color: Colors.white70, height: 1.5))),
@@ -252,7 +253,31 @@ Future<void> _loadKinopoiskRating() async {
 
   Widget _sourceBtn(String l, VoidCallback o, Color c) => OutlinedButton(onPressed: o, style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: BorderSide(color: c), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(l));
 
-  Widget _buildTrailerButton() => Padding(padding: const EdgeInsets.only(bottom: 24), child: SizedBox(width: double.infinity, height: 50, child: ElevatedButton.icon(onPressed: () => _tmdbService.launchTrailer(widget.movie['videos']['results']), style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), icon: const Icon(Icons.play_arrow), label: const Text('СМОТРЕТЬ ТРЕЙЛЕР'))));
+  Widget _buildTrailerButton(Map m) => Padding(
+    padding: const EdgeInsets.only(bottom: 24), 
+    child: SizedBox(
+      width: double.infinity, height: 50, 
+      child: ElevatedButton.icon(
+        onPressed: () {
+          // Получаем ключ
+          final key = _tmdbService.getTrailerKey(m['videos']?['results']);
+          if (key != null) {
+            // Открываем наш внутренний плеер
+            Navigator.push(context, MaterialPageRoute(
+              builder: (context) => TrailerPlayerScreen(youtubeKey: key)
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Трейлер не найден'))
+            );
+          }
+        }, 
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), 
+        icon: const Icon(Icons.play_arrow), 
+        label: const Text('СМОТРЕТЬ ТРЕЙЛЕР')
+      )
+    )
+  );
 
   Widget _buildActorsList() => SizedBox(height: 120, child: ListView.builder(scrollDirection: Axis.horizontal, itemCount: _getActors().length, itemBuilder: (context, i) => Container(width: 80, margin: const EdgeInsets.only(right: 12), child: Column(children: [ClipOval(child: _getActors()[i]['profile_path'] != null ? Image.network(_tmdbService.getImageUrl(_getActors()[i]['profile_path']), width: 65, height: 65, fit: BoxFit.cover) : Container(width: 65, height: 65, color: Colors.white10, child: const Icon(Icons.person))), const SizedBox(height: 8), Text(_getActors()[i]['name'] ?? '', maxLines: 2, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10))]))));
 

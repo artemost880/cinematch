@@ -289,21 +289,13 @@ class TMDBService {
     }
   }
 
-  Future<void> launchTrailer(List<dynamic>? videos) async {
-    if (videos == null || videos.isEmpty) return;
+// Возвращает ключ (ID) YouTube видео для плеера
+  String? getTrailerKey(List<dynamic>? videos) {
+    if (videos == null || videos.isEmpty) return null;
     final trailer = videos.firstWhere(
       (v) => v['site'] == 'YouTube' && v['type'] == 'Trailer',
       orElse: () => videos.firstWhere((v) => v['site'] == 'YouTube', orElse: () => null),
     );
-
-    if (trailer != null && trailer['key'] != null) {
-      final Uri url = Uri.parse('https://www.youtube.com/watch?v=${trailer['key']}');
-      final Uri appUrl = Uri.parse('youtube://www.youtube.com/watch?v=${trailer['key']}');
-      if (await canLaunchUrl(appUrl)) {
-        await launchUrl(appUrl, mode: LaunchMode.externalApplication);
-      } else if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      }
-    }
+    return trailer != null ? trailer['key'] as String? : null;
   }
 }
